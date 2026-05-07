@@ -8,6 +8,7 @@ import { MetricCard } from '@/components/shared/MetricCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { ChartCard } from '@/components/charts/ChartCard'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { calcColaboradoresAnalise } from '@/lib/calculations'
 import { formatPercent, formatHours, formatNumber } from '@/lib/formatters'
@@ -16,15 +17,11 @@ import type { ColaboradorAnalise } from '@/types'
 import { Users, Clock, TrendingUp, AlertTriangle, Star, Activity } from 'lucide-react'
 
 export function Colaboradores() {
-  const { colaboradores, clientes, mesSelecionado } = useSheetsStore()
+  const { colaboradoresFiltrados, labelPeriodo, isRange } = useFilteredSheets()
+  const { colaboradores } = useSheetsStore()
 
   const [areaFiltro, setAreaFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
-
-  const colaboradoresFiltrados = useMemo(
-    () => colaboradores.filter(c => c.mesAno === mesSelecionado),
-    [colaboradores, mesSelecionado]
-  )
 
   const analise = useMemo(
     () => calcColaboradoresAnalise(colaboradoresFiltrados),
@@ -243,7 +240,7 @@ export function Colaboradores() {
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral">Análise de Colaboradores</h1>
-        <p className="text-sm text-muted mt-1">Ocupação e performance da equipe — {mesSelecionado}</p>
+        <p className="text-sm text-muted mt-1">Ocupação e performance da equipe — {labelPeriodo}</p>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}

@@ -3,9 +3,9 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { CheckCircle, XCircle } from 'lucide-react'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { MetricCard } from '@/components/shared/MetricCard'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useCustosStore } from '@/store/useCustosStore'
-import { useSheetsStore } from '@/store/useSheetsStore'
 import {
   calcTotalFolha,
   calcTotalFixos,
@@ -31,9 +31,9 @@ const FASES = [
 ]
 
 export function Crescimento() {
+  const { clientesFiltrados, labelPeriodo } = useFilteredSheets()
   const { params, pacotes } = useConfigStore()
   const { equipe, fixos, variaveis } = useCustosStore()
-  const { clientes, mesSelecionado } = useSheetsStore()
 
   const [metaJana, setMetaJana] = useState(12000)
   const [metaFelipe, setMetaFelipe] = useState(15000)
@@ -43,9 +43,8 @@ export function Crescimento() {
 
   const margemMetaPct = margemMeta / 100
 
-  const clientesMes = clientes.filter(c => c.mesAno === mesSelecionado)
-  const receitaAtual = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
-  const ticketMedio = calcTicketMedioReceita(clientesMes)
+  const receitaAtual = clientesFiltrados.reduce((s, c) => s + c.entradaContratual, 0)
+  const ticketMedio = calcTicketMedioReceita(clientesFiltrados)
 
   // Com metas salariais dos sócios
   const equipeComMeta = equipe.map(m => {
@@ -155,7 +154,7 @@ export function Crescimento() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         <MetricCard label="Custo com metas" value={formatCurrency(custoComMeta)} subtext="folha + fixos" />
         <MetricCard label="Receita necessária" value={formatCurrency(receitaNecessaria)} variant="warning" />
-        <MetricCard label="Receita atual" value={formatCurrency(receitaAtual)} subtext={mesSelecionado} variant="info" />
+        <MetricCard label="Receita atual" value={formatCurrency(receitaAtual)} subtext={labelPeriodo} variant="info" />
         <MetricCard
           label="Receita adicional"
           value={formatCurrency(Math.max(deltaReceita, 0))}

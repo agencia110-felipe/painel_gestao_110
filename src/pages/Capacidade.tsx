@@ -3,6 +3,7 @@ import { ReferenceLine, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { MetricCard } from '@/components/shared/MetricCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
@@ -40,13 +41,13 @@ function progressColor(pct: number): string {
 }
 
 export function Capacidade() {
+  const { clientesFiltrados, labelPeriodo } = useFilteredSheets()
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
-  const { clientes, mesSelecionado } = useSheetsStore()
+  const { clientes } = useSheetsStore()
   const [simHoras, setSimHoras] = useState(0)
 
-  const clientesMes = clientes.filter(c => c.mesAno === mesSelecionado)
-  const totalHorasClientes = clientesMes.reduce((s, c) => s + c.tempoTrabalhado, 0)
+  const totalHorasClientes = clientesFiltrados.reduce((s, c) => s + c.tempoTrabalhado, 0)
 
   const setoresData = useMemo(() => SETORES.map(setor => {
     const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
@@ -95,13 +96,13 @@ export function Capacidade() {
     <PageWrapper>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-neutral">Capacidade</h1>
-        <p className="text-sm text-muted mt-1">Análise de ocupação por setor — {mesSelecionado}</p>
+        <p className="text-sm text-muted mt-1">Análise de ocupação por setor — {labelPeriodo}</p>
       </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MetricCard label="Horas Faturáveis Totais" value={formatHours(totalCap)} />
-        <MetricCard label="Consumo Atual" value={formatHours(totalConsumo)} subtext={mesSelecionado} />
+        <MetricCard label="Consumo Atual" value={formatHours(totalConsumo)} subtext={labelPeriodo} />
         <MetricCard
           label="Ocupação Geral"
           value={formatPercent(totalOcupacao)}

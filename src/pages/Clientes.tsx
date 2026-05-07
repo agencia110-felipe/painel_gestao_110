@@ -8,11 +8,10 @@ import { MetricCard } from '@/components/shared/MetricCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
 import { DataTable, type Column } from '@/components/shared/DataTable'
 import { ChartCard } from '@/components/charts/ChartCard'
-import { useSheetsStore } from '@/store/useSheetsStore'
-import { useCustosStore } from '@/store/useCustosStore'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useConfigStore } from '@/store/useConfigStore'
+import { useCustosStore } from '@/store/useCustosStore'
 import {
-  calcCustoTotalMensal,
   calcClientesAnalise,
   calcReceitaMinimaCliente,
   calcHorasFaturaveisTotal,
@@ -26,27 +25,17 @@ import { DollarSign, TrendingUp, Users, BarChart2 } from 'lucide-react'
 type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'horasMes'
 
 export function Clientes() {
-  const { clientes, mesSelecionado } = useSheetsStore()
-  const { equipe, fixos, variaveis } = useCustosStore()
+  const { clientesFiltrados, custoTotal, labelPeriodo, isRange, nMeses } = useFilteredSheets()
   const { params } = useConfigStore()
+  const { equipe } = useCustosStore()
 
   const [clusterFiltro, setClusterFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
   const [sortField, setSortField] = useState<SortField>('receita')
 
-  const clientesFiltrados = useMemo(
-    () => clientes.filter(c => c.mesAno === mesSelecionado),
-    [clientes, mesSelecionado]
-  )
-
-  const custoTotal = useMemo(
-    () => calcCustoTotalMensal(equipe, fixos, variaveis, mesSelecionado),
-    [equipe, fixos, variaveis, mesSelecionado]
-  )
-
   const horasFaturaveis = useMemo(
-    () => calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct),
-    [equipe, params]
+    () => calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct) * nMeses,
+    [equipe, params, nMeses]
   )
 
   const custoPorHora = calcCustoPorHoraReal(custoTotal, horasFaturaveis)
@@ -212,7 +201,7 @@ export function Clientes() {
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral">Análise de Clientes</h1>
-        <p className="text-sm text-muted mt-1">Lucratividade e saúde financeira por cliente — {mesSelecionado}</p>
+        <p className="text-sm text-muted mt-1">Lucratividade e saúde financeira por cliente — {labelPeriodo}</p>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
@@ -327,7 +316,7 @@ export function Clientes() {
 
       {/* ── Charts ──────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
-        <ChartCard title="Lucratividade por Cliente" subtitle={mesSelecionado}>
+        <ChartCard title="Lucratividade por Cliente" subtitle={labelPeriodo}>
           {dadosFiltrados.length === 0 ? (
             <div className="flex items-center justify-center h-[280px] text-muted text-sm">
               Nenhum dado

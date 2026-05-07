@@ -7,11 +7,11 @@ import { PageWrapper } from '@/components/layout/PageWrapper'
 import { MetricCard } from '@/components/shared/MetricCard'
 import { AlertBanner } from '@/components/shared/AlertBanner'
 import { ChartCard } from '@/components/charts/ChartCard'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useConfigStore } from '@/store/useConfigStore'
 import {
-  calcCustoTotalMensal,
   calcHorasFaturaveisTotal,
   calcCustoPorHoraReal,
   calcPrecoPorHoraMinimo,
@@ -29,24 +29,10 @@ import {
 } from 'lucide-react'
 
 export function Dashboard() {
-  const { clientes, colaboradores, mesSelecionado } = useSheetsStore()
-  const { equipe, fixos, variaveis } = useCustosStore()
+  const { clientesFiltrados, colaboradoresFiltrados, custoTotal, labelPeriodo, isRange } = useFilteredSheets()
+  const { clientes } = useSheetsStore()
+  const { equipe, fixos } = useCustosStore()
   const { params } = useConfigStore()
-
-  const clientesFiltrados = useMemo(
-    () => clientes.filter(c => c.mesAno === mesSelecionado),
-    [clientes, mesSelecionado]
-  )
-
-  const colaboradoresFiltrados = useMemo(
-    () => colaboradores.filter(c => c.mesAno === mesSelecionado),
-    [colaboradores, mesSelecionado]
-  )
-
-  const custoTotal = useMemo(
-    () => calcCustoTotalMensal(equipe, fixos, variaveis, mesSelecionado),
-    [equipe, fixos, variaveis, mesSelecionado]
-  )
 
   const analiseClientes = useMemo(
     () => calcClientesAnalise(clientesFiltrados, custoTotal),
@@ -199,7 +185,7 @@ export function Dashboard() {
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral">Visão Executiva</h1>
-        <p className="text-sm text-muted mt-1">Painel geral de desempenho — {mesSelecionado}</p>
+        <p className="text-sm text-muted mt-1">Painel geral de desempenho — {labelPeriodo}{isRange ? ' (período acumulado)' : ''}</p>
       </div>
 
       {/* ── Alerts ──────────────────────────────────────────────────────────── */}
@@ -354,7 +340,7 @@ export function Dashboard() {
         {/* Chart 3: Lucro por Cliente */}
         <ChartCard
           title="Lucro por Cliente"
-          subtitle={mesSelecionado}
+          subtitle={labelPeriodo}
         >
           <ResponsiveContainer width="100%" height={280}>
             <BarChart

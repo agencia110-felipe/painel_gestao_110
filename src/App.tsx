@@ -10,6 +10,8 @@ import { Capacidade } from '@/pages/Capacidade'
 import { Pacotes } from '@/pages/Pacotes'
 import { Crescimento } from '@/pages/Crescimento'
 import { Configuracoes } from '@/pages/Configuracoes'
+import { useCustosStore } from '@/store/useCustosStore'
+import { authApi } from '@/lib/api'
 
 const PAGE_TITLES: Record<string, string> = {
   '/':              'Dashboard',
@@ -22,19 +24,32 @@ const PAGE_TITLES: Record<string, string> = {
   '/configuracoes': 'Configurações',
 }
 
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+function isAuthed(): boolean {
+  return !!localStorage.getItem('auth_token')
+}
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+
 function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [pass, setPass] = useState('')
-  const [error, setError] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const correct = import.meta.env.VITE_ACCESS_PASSWORD || '110agencia'
-    if (pass === correct) {
-      sessionStorage.setItem('auth110', '1')
+    setLoading(true)
+    setError('')
+    try {
+      const { token } = await authApi.login(pass)
+      localStorage.setItem('auth_token', token)
       onLogin()
-    } else {
-      setError(true)
+    } catch {
+      setError('Senha incorreta')
       setPass('')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -52,32 +67,77 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
           <input
             type="password"
             value={pass}
-            onChange={e => { setPass(e.target.value); setError(false) }}
+            onChange={e => { setPass(e.target.value); setError('') }}
             placeholder="Senha de acesso"
             autoFocus
+            disabled={loading}
             className={`w-full border rounded-lg px-4 py-3 text-sm text-neutral focus:outline-none focus:ring-2 focus:ring-primary/30 ${
               error ? 'border-danger bg-danger-bg' : 'border-border'
             }`}
           />
-          {error && <p className="text-danger text-xs mt-1.5">Senha incorreta</p>}
+          {error && <p className="text-danger text-xs mt-1.5">{error}</p>}
           <button
             type="submit"
-            className="w-full mt-4 bg-primary text-white rounded-lg py-3 text-sm font-medium hover:bg-primary-light transition-colors"
+            disabled={loading}
+            className="w-full mt-4 bg-primary text-white rounded-lg py-3 text-sm font-medium hover:bg-primary-light transition-colors disabled:opacity-60"
           >
-            Entrar
+            {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-        <p className="text-center text-muted text-xs mt-6">Senha padrão: 110agencia</p>
       </div>
     </div>
   )
 }
 
-function PrivateRoute({ children }: { children: ReactNode }) {
-  const auth = sessionStorage.getItem('auth110')
-  if (!auth) return <Navigate to="/login" replace />
+// ─── Data initializer ─────────────────────────────────────────────────────────
+// Carrega equipe/fixos/variáveis do backend assim que o usuário está autenticado
+
+function DataInitializer({ children }: { children: ReactNode }) {
+  const { initialize, initialized, loading, error } = useCustosStore()
+
+  useEffect(() => {
+    initialize()
+  }, [initialize])
+
+  if (!initialized && loading) {
+    return (
+      <div className="min-h-screen bg-bg-page flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-muted text-sm">Carregando dados...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!initialized && error) {
+    return (
+      <div className="min-h-screen bg-bg-page flex items-center justify-center">
+        <div className="text-center max-w-sm px-4">
+          <p className="text-danger font-medium mb-2">Erro ao conectar ao servidor</p>
+          <p className="text-muted text-sm mb-4">{error}</p>
+          <button
+            onClick={() => initialize()}
+            className="bg-primary text-white text-sm px-4 py-2 rounded-lg hover:bg-primary-light"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return <>{children}</>
 }
+
+// ─── Private route ────────────────────────────────────────────────────────────
+
+function PrivateRoute({ children }: { children: ReactNode }) {
+  if (!isAuthed()) return <Navigate to="/login" replace />
+  return <DataInitializer>{children}</DataInitializer>
+}
+
+// ─── App layout ───────────────────────────────────────────────────────────────
 
 function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -108,8 +168,10 @@ function AppLayout() {
   )
 }
 
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [authed, setAuthed] = useState(() => !!sessionStorage.getItem('auth110'))
+  const [authed, setAuthed] = useState(isAuthed)
 
   return (
     <BrowserRouter>

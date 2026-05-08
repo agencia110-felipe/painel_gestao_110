@@ -1,0 +1,32 @@
+# Painel de Gestão — Agência 110
+# Subdomínio dedicado: não interfere nos outros sites da VPS
+#
+# Para ativar: copie este arquivo para /etc/caddy/sites/gestaopainel.conf
+# e inclua no Caddyfile principal com: import /etc/caddy/sites/*.conf
+
+gestaopainel.agencia110.com.br {
+    # HTTPS automático via Let's Encrypt (Caddy gerencia sozinho)
+
+    # Rota da API Express (porta 3005)
+    handle /api/* {
+        reverse_proxy localhost:3005 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # Frontend React (arquivos estáticos buildados)
+    handle {
+        root * /var/www/dashboard
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Logs separados
+    log {
+        output file /var/log/caddy/gestaopainel.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+    }
+}

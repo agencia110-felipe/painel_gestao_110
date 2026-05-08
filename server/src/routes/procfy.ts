@@ -57,7 +57,6 @@ const CATEGORIAS_FIXAS = new Set([
   'outros',
   'plano de saúde',
   'segurança',
-  'taxas bancárias',
   'telefone fixo',
 ])
 

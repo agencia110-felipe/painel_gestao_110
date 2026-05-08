@@ -46,7 +46,22 @@ function resolveDataCompetencia(t: ProcfyTransaction): string {
   )
 }
 
-// Tipos de despesa fixa reconhecidos (inclui variações que o Procfy possa usar)
+// Categorias que devem ser tratadas como CUSTO FIXO mesmo que o Procfy
+// as classifique como variable_expense. Nomes em minúsculo para comparação case-insensitive.
+const CATEGORIAS_FIXAS = new Set([
+  'água e esgoto',
+  'aluguel',
+  'contabilidade',
+  'energia elétrica',
+  'ferramentas',
+  'outros',
+  'plano de saúde',
+  'segurança',
+  'taxas bancárias',
+  'telefone fixo',
+])
+
+// Tipos de transação que indicam despesa fixa por natureza (sem depender de categoria)
 const TIPOS_FIXO = new Set([
   'fixed_expense',
   'despesa_fixa',
@@ -54,12 +69,36 @@ const TIPOS_FIXO = new Set([
   'fixed',
 ])
 
-// Tipos de despesa variável reconhecidos
-const TIPOS_VARIAVEL = new Set([
+// Tipos de transação que indicam despesa variável ou fixa por categoria
+const TIPOS_DESPESA = new Set([
   'variable_expense',
+  'fixed_expense',
+  'despesa_fixa',
+  'custo_fixo',
   'despesa_variavel',
   'variable',
+  'fixed',
 ])
+
+// Extrai o nome da categoria de uma transação de forma segura.
+// O Procfy pode retornar category como string, objeto {name, id, …} ou nulo.
+function getCategoryName(t: ProcfyTransaction): string {
+  const raw = t.category
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw.trim()
+  if (typeof raw === 'object' && raw !== null) {
+    const obj = raw as Record<string, unknown>
+    return String(obj.name ?? obj.title ?? obj.id ?? '').trim()
+  }
+  return String(raw).trim()
+}
+
+// Retorna true se a transação deve ser tratada como custo fixo.
+// Critério: tipo explicitamente fixo OU categoria da transação está na lista CATEGORIAS_FIXAS.
+function ehFixo(t: ProcfyTransaction): boolean {
+  if (TIPOS_FIXO.has(t.transaction_type)) return true
+  return CATEGORIAS_FIXAS.has(getCategoryName(t).toLowerCase())
+}
 
 async function fetchPage(
   apiKey: string,
@@ -282,16 +321,20 @@ router.post('/sync', async (_req, res) => {
       all.push(...data)
     }
 
-    // Log diagnóstico no servidor: mostra que tipos existem nos dados reais
+    // Log: tipos únicos presentes nos dados reais
     const tiposUnicos = [...new Set(all.map(t => t.transaction_type))]
-    console.log(`[Procfy] ${all.length} transações encontradas. Tipos: ${tiposUnicos.join(', ')}`)
+    console.log(`[Procfy] ${all.length} transações. Tipos: ${tiposUnicos.join(', ')}`)
 
-    const fixedRaw = all.filter(t => TIPOS_FIXO.has(t.transaction_type))
-    const variableRaw = all.filter(t => TIPOS_VARIAVEL.has(t.transaction_type))
+    // Considera apenas transações que são algum tipo de despesa
+    const despesas = all.filter(t => TIPOS_DESPESA.has(t.transaction_type))
+
+    // Separa pelo critério composto: fixo por tipo OU por categoria
+    const fixedRaw   = despesas.filter(t => ehFixo(t))
+    const variableRaw = despesas.filter(t => !ehFixo(t))
 
     console.log(`[Procfy] Fixas: ${fixedRaw.length} | Variáveis: ${variableRaw.length}`)
 
-    // Deduplica despesas fixas por nome — mantém o de maior valor entre os meses
+    // Deduplica fixas por nome — entre vários meses mantém o maior valor
     const fixedByName = new Map<string, ProcfyTransaction>()
     for (const t of fixedRaw) {
       const key = (t.name || t.description || '').toLowerCase().trim()
@@ -306,7 +349,7 @@ router.post('/sync', async (_req, res) => {
       descricao: t.name || t.description || 'Sem descrição',
       valor: Math.abs(t.amount_cents) / 100,
       tipo: 'Backend' as const,
-      observacao: `Procfy · ${resolveDataCompetencia(t) || t.due_date || '—'}`,
+      observacao: `Procfy · ${getCategoryName(t) || resolveDataCompetencia(t) || '—'}`,
     }))
 
     const variaveis = variableRaw.map(t => ({
@@ -314,7 +357,7 @@ router.post('/sync', async (_req, res) => {
       mesAno: isoToPtBrMes(resolveDataCompetencia(t)),
       descricao: t.name || t.description || 'Sem descrição',
       valor: Math.abs(t.amount_cents) / 100,
-      categoria: 'Despesas variáveis',
+      categoria: getCategoryName(t) || 'Despesas variáveis',
     }))
 
     res.json({
@@ -323,6 +366,7 @@ router.post('/sync', async (_req, res) => {
       syncedAt: new Date().toISOString(),
       _debug: {
         totalTransacoes: all.length,
+        totalDespesas: despesas.length,
         tiposEncontrados: tiposUnicos,
         fixasEncontradas: fixedRaw.length,
         variaveisEncontradas: variableRaw.length,

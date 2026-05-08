@@ -1,5 +1,6 @@
 import 'dotenv/config'
-import { db } from './db'
+import { drizzle } from 'drizzle-orm/node-postgres'
+import { Pool } from 'pg'
 import { equipe, custosFixos } from './db/schema'
 import { count } from 'drizzle-orm'
 
@@ -24,13 +25,23 @@ const fixosIniciais = [
 ]
 
 export async function seedIfEmpty() {
-  const [{ count: equipCount }] = await db.select({ count: count() }).from(equipe)
-  if (Number(equipCount) > 0) return
+  const url = process.env.DATABASE_URL
+  if (!url) throw new Error('DATABASE_URL não definida — verifique o arquivo server/.env')
 
-  console.log('🌱 Banco vazio — inserindo dados iniciais...')
-  await db.insert(equipe).values(equipeInicial)
-  await db.insert(custosFixos).values(fixosIniciais)
-  console.log('✅ Seed concluído')
+  const pool = new Pool({ connectionString: url })
+  const db = drizzle(pool)
+
+  try {
+    const [{ count: equipCount }] = await db.select({ count: count() }).from(equipe)
+    if (Number(equipCount) > 0) return
+
+    console.log('🌱 Banco vazio — inserindo dados iniciais...')
+    await db.insert(equipe).values(equipeInicial)
+    await db.insert(custosFixos).values(fixosIniciais)
+    console.log('✅ Seed concluído')
+  } finally {
+    await pool.end()
+  }
 }
 
 // Executar diretamente: tsx src/seed.ts

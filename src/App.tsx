@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
@@ -11,6 +11,7 @@ import { Pacotes } from '@/pages/Pacotes'
 import { Crescimento } from '@/pages/Crescimento'
 import { Configuracoes } from '@/pages/Configuracoes'
 import { useCustosStore } from '@/store/useCustosStore'
+import { useConfigStore } from '@/store/useConfigStore'
 import { authApi } from '@/lib/api'
 
 const PAGE_TITLES: Record<string, string> = {
@@ -93,11 +94,20 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 // Carrega equipe/fixos/variáveis do backend assim que o usuário está autenticado
 
 function DataInitializer({ children }: { children: ReactNode }) {
-  const { initialize, initialized, loading, error } = useCustosStore()
+  const { initialize, initialized, loading, error, syncFromProcfy } = useCustosStore()
+  const { procfyAutoSync } = useConfigStore()
+  const autoSyncFired = useRef(false)
 
   useEffect(() => {
     initialize()
   }, [initialize])
+
+  useEffect(() => {
+    if (initialized && procfyAutoSync && !autoSyncFired.current) {
+      autoSyncFired.current = true
+      syncFromProcfy()
+    }
+  }, [initialized, procfyAutoSync, syncFromProcfy])
 
   if (!initialized && loading) {
     return (

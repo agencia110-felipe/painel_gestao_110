@@ -1,5 +1,5 @@
 import { useState, Fragment } from 'react'
-import { Trash2, Plus, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { Trash2, Plus, AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Database } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { MetricCard } from '@/components/shared/MetricCard'
@@ -31,7 +31,13 @@ const BACKEND_SET = new Set<string>(SETORES_BACKEND_LIST)
 
 export function Custos() {
   const [activeTab, setActiveTab] = useState<TabId>('equipe')
-  const { equipe, fixos, variaveis, addMembro, updateMembro, removeMembro, toggleStatus, addFixo, updateFixo, removeFixo, addVariavel, updateVariavel, removeVariavel } = useCustosStore()
+  const {
+    equipe, fixos, variaveis,
+    addMembro, updateMembro, removeMembro, toggleStatus,
+    addFixo, updateFixo, removeFixo,
+    addVariavel, updateVariavel, removeVariavel,
+    hasProcfy, procfyLastSync, procfyLoading, procfyError, syncFromProcfy,
+  } = useCustosStore()
   const { params } = useConfigStore()
 
   const totalFolha = calcTotalFolha(equipe)
@@ -71,8 +77,8 @@ export function Custos() {
       </div>
 
       {activeTab === 'equipe' && <TabEquipe equipe={equipe} totalFolha={totalFolha} horasFat={horasFat} totalBackend={totalBackend} pctBackend={pctBackend} updateMembro={updateMembro} removeMembro={removeMembro} toggleStatus={toggleStatus} addMembro={addMembro} />}
-      {activeTab === 'fixos' && <TabFixos fixos={fixos} addFixo={addFixo} updateFixo={updateFixo} removeFixo={removeFixo} />}
-      {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} />}
+      {activeTab === 'fixos' && <TabFixos fixos={fixos} hasProcfy={hasProcfy} procfyLastSync={procfyLastSync} procfyLoading={procfyLoading} procfyError={procfyError} syncFromProcfy={syncFromProcfy} />}
+      {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis} hasProcfy={hasProcfy} procfyLastSync={procfyLastSync} procfyLoading={procfyLoading} procfyError={procfyError} syncFromProcfy={syncFromProcfy} />}
       {activeTab === 'resumo' && <TabResumo equipe={equipe} fixos={fixos} variaveis={variaveis} params={params} />}
     </PageWrapper>
   )
@@ -468,13 +474,62 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
   )
 }
 
+// ─── Barra de sync Procfy (reutilizada em Fixos e Variáveis) ──────────────────
+
+function ProcfySyncBar({
+  hasProcfy,
+  procfyLastSync,
+  procfyLoading,
+  procfyError,
+  syncFromProcfy,
+}: {
+  hasProcfy: boolean
+  procfyLastSync: string | null
+  procfyLoading: boolean
+  procfyError: string | null
+  syncFromProcfy: () => Promise<void>
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between bg-bg-page rounded-lg px-4 py-3 border border-border">
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <Database size={12} />
+          {hasProcfy
+            ? `Procfy · última sync: ${procfyLastSync ? new Date(procfyLastSync).toLocaleString('pt-BR') : '—'}`
+            : 'Dados locais — Procfy ainda não sincronizado'}
+        </div>
+        <button
+          onClick={syncFromProcfy}
+          disabled={procfyLoading}
+          className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={procfyLoading ? 'animate-spin' : ''} />
+          {procfyLoading ? 'Sincronizando...' : 'Sincronizar Procfy'}
+        </button>
+      </div>
+      {procfyError && (
+        <AlertBanner type="danger" message={`Erro Procfy: ${procfyError}`} dismissible={false} />
+      )}
+    </div>
+  )
+}
+
 // ─── Tab Fixos ─────────────────────────────────────────────────────────────────
 
-function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
+function TabFixos({
+  fixos,
+  hasProcfy,
+  procfyLastSync,
+  procfyLoading,
+  procfyError,
+  syncFromProcfy,
+}: {
   fixos: CustoFixo[]
-  addFixo: (f: Omit<CustoFixo, 'id'>) => void
-  updateFixo: (id: string, f: Partial<CustoFixo>) => void
-  removeFixo: (id: string) => void
+  hasProcfy: boolean
+  procfyLastSync: string | null
+  procfyLoading: boolean
+  procfyError: string | null
+  syncFromProcfy: () => Promise<void>
 }) {
   const totalBackend = fixos.filter(f => f.tipo === 'Backend').reduce((s, f) => s + f.valor, 0)
   const totalOp = fixos.filter(f => f.tipo === 'Operacional').reduce((s, f) => s + f.valor, 0)
@@ -485,12 +540,16 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
     { name: 'Operacional', value: totalOp },
   ]
 
-  function handleAdd() {
-    addFixo({ descricao: 'Novo custo', valor: 0, tipo: 'Operacional', observacao: '' })
-  }
-
   return (
     <div className="space-y-5">
+      <ProcfySyncBar
+        hasProcfy={hasProcfy}
+        procfyLastSync={procfyLastSync}
+        procfyLoading={procfyLoading}
+        procfyError={procfyError}
+        syncFromProcfy={syncFromProcfy}
+      />
+
       <div className="grid grid-cols-3 gap-4">
         <MetricCard label="Total Backend" value={formatCurrency(totalBackend)} variant="warning" />
         <MetricCard label="Total Operacional" value={formatCurrency(totalOp)} variant="info" />
@@ -505,63 +564,35 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Descrição</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Valor</th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Tipo</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Observação</th>
-                <th className="px-4 py-3"></th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Referência</th>
               </tr>
             </thead>
             <tbody>
+              {fixos.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-muted text-sm">
+                    Nenhum custo fixo. Sincronize com o Procfy para importar automaticamente.
+                  </td>
+                </tr>
+              )}
               {fixos.map(f => (
                 <tr key={f.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-2">
-                    <input
-                      className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                      defaultValue={f.descricao}
-                      onBlur={e => updateFixo(f.id, { descricao: e.target.value })}
-                    />
+                  <td className="px-4 py-3 font-medium text-neutral">{f.descricao}</td>
+                  <td className="px-4 py-3 text-right font-mono">{formatCurrency(f.valor)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                      f.tipo === 'Backend'
+                        ? 'bg-warning/10 text-warning'
+                        : 'bg-primary/10 text-primary'
+                    }`}>
+                      {f.tipo}
+                    </span>
                   </td>
-                  <td className="px-4 py-2 text-right">
-                    <input
-                      type="number"
-                      className="w-24 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                      defaultValue={f.valor}
-                      onBlur={e => updateFixo(f.id, { valor: Number(e.target.value) })}
-                    />
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <select
-                      className="text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 cursor-pointer"
-                      value={f.tipo}
-                      onChange={e => updateFixo(f.id, { tipo: e.target.value as CustoFixo['tipo'] })}
-                    >
-                      <option value="Backend">Backend</option>
-                      <option value="Operacional">Operacional</option>
-                    </select>
-                  </td>
-                  <td className="px-4 py-2">
-                    <input
-                      className="w-full text-sm text-muted bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                      defaultValue={f.observacao || ''}
-                      onBlur={e => updateFixo(f.id, { observacao: e.target.value })}
-                      placeholder="—"
-                    />
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <button onClick={() => removeFixo(f.id)} className="text-muted hover:text-danger transition-colors">
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
+                  <td className="px-4 py-3 text-muted text-xs">{f.observacao || '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="px-4 py-3 border-t border-border">
-            <button
-              onClick={handleAdd}
-              className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
-            >
-              <Plus size={16} /> Adicionar custo fixo
-            </button>
-          </div>
         </div>
 
         <div className="bg-white rounded-xl border border-border p-5">
@@ -597,27 +628,37 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
 
 // ─── Tab Variáveis ─────────────────────────────────────────────────────────────
 
-function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel }: {
+function TabVariaveis({
+  variaveis,
+  hasProcfy,
+  procfyLastSync,
+  procfyLoading,
+  procfyError,
+  syncFromProcfy,
+}: {
   variaveis: import('@/types').CustoVariavel[]
-  addVariavel: (v: Omit<import('@/types').CustoVariavel, 'id'>) => void
-  updateVariavel: (id: string, v: Partial<import('@/types').CustoVariavel>) => void
-  removeVariavel: (id: string) => void
+  hasProcfy: boolean
+  procfyLastSync: string | null
+  procfyLoading: boolean
+  procfyError: string | null
+  syncFromProcfy: () => Promise<void>
 }) {
   const meses = [...new Set(variaveis.map(v => v.mesAno))].sort()
-  const currentMes = new Date().toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('. ', '/').replace('.', '')
   const [mesFiltro, setMesFiltro] = useState(meses[meses.length - 1] || '')
-  const [novoMesAno, setNovoMesAno] = useState(currentMes)
 
   const filtradas = mesFiltro ? variaveis.filter(v => v.mesAno === mesFiltro) : variaveis
   const totalMes = filtradas.reduce((s, v) => s + v.valor, 0)
 
-  function handleAdd() {
-    if (!novoMesAno.trim()) return
-    addVariavel({ mesAno: novoMesAno, descricao: 'Nova despesa', valor: 0, categoria: 'Outros' })
-  }
-
   return (
     <div className="space-y-5">
+      <ProcfySyncBar
+        hasProcfy={hasProcfy}
+        procfyLastSync={procfyLastSync}
+        procfyLoading={procfyLoading}
+        procfyError={procfyError}
+        syncFromProcfy={syncFromProcfy}
+      />
+
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <label className="text-sm text-muted">Filtrar mês:</label>
@@ -641,71 +682,30 @@ function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel }
               <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Descrição</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Valor</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Categoria</th>
-              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {filtradas.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-muted text-sm">Nenhuma variável registrada para este mês.</td></tr>
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted text-sm">
+                  Nenhuma despesa variável{mesFiltro ? ` em ${mesFiltro}` : ''}. Sincronize com o Procfy.
+                </td>
+              </tr>
             )}
             {filtradas.map(v => (
               <tr key={v.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-2">
-                  <input
-                    className="w-28 text-sm text-muted bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={v.mesAno}
-                    onBlur={e => updateVariavel(v.id, { mesAno: e.target.value })}
-                  />
-                </td>
-                <td className="px-4 py-2">
-                  <input
-                    className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={v.descricao}
-                    onBlur={e => updateVariavel(v.id, { descricao: e.target.value })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <input
-                    type="number"
-                    className="w-24 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={v.valor}
-                    onBlur={e => updateVariavel(v.id, { valor: Number(e.target.value) })}
-                  />
-                </td>
-                <td className="px-4 py-2">
-                  <input
-                    className="w-full text-sm text-muted bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={v.categoria}
-                    onBlur={e => updateVariavel(v.id, { categoria: e.target.value })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <button onClick={() => removeVariavel(v.id)} className="text-muted hover:text-danger transition-colors">
-                    <Trash2 size={14} />
-                  </button>
+                <td className="px-4 py-3 text-muted text-sm">{v.mesAno}</td>
+                <td className="px-4 py-3 font-medium text-neutral">{v.descricao}</td>
+                <td className="px-4 py-3 text-right font-mono">{formatCurrency(v.valor)}</td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-neutral/10 text-neutral">
+                    {v.categoria}
+                  </span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
-
-      <div className="flex items-end gap-3">
-        <div>
-          <label className="text-xs text-muted mb-1 block">Mês/Ano (ex: Jan/2026)</label>
-          <input
-            className="border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            value={novoMesAno}
-            onChange={e => setNovoMesAno(e.target.value)}
-            placeholder="Jan/2026"
-          />
-        </div>
-        <button
-          onClick={handleAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
-        >
-          <Plus size={16} /> Adicionar variável
-        </button>
       </div>
     </div>
   )

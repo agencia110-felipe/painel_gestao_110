@@ -16,17 +16,9 @@ import {
   calcPrecoPorHoraMinimo,
   calcPrecoPorHoraRecomendado,
 } from '@/lib/calculations'
+import { sortMesAno } from '@/lib/aggregation'
 import { formatCurrency, formatHours, formatPercent } from '@/lib/formatters'
 import { CHART_COLORS, SETOR_COLORS, PACOTES_BASE, SETORES_BACKEND_LIST } from '@/lib/constants'
-
-// Pesos de distribuição de horas de clientes por setor.
-// Apenas os 3 setores principais têm peso real (soma = 1.0).
-// Novos setores aparecem com capacidade mas sem consumo de cliente mapeado.
-const SETOR_WEIGHTS: Record<string, number> = {
-  'Tráfego':     0.60,
-  'Atendimento': 0.25,
-  'Criação':     0.15,
-}
 
 const BACKEND_SET = new Set<string>(SETORES_BACKEND_LIST)
 
@@ -37,15 +29,23 @@ function progressColor(pct: number): string {
 }
 
 export function Capacidade() {
-  const { clientesFiltrados, labelPeriodo } = useFilteredSheets()
+  const { colaboradoresFiltrados, labelPeriodo } = useFilteredSheets()
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
-  const { clientes } = useSheetsStore()
+  const { colaboradores } = useSheetsStore()
   const [simHoras, setSimHoras] = useState(0)
 
-  const totalHorasClientes = clientesFiltrados.reduce((s, c) => s + c.tempoTrabalhado, 0)
+  // Horas reais consumidas por área, baseadas nos dados de colaboradores da planilha
+  const horasPorArea = useMemo(() => {
+    const map: Record<string, number> = {}
+    colaboradoresFiltrados.forEach(c => {
+      if (BACKEND_SET.has(c.area)) return
+      map[c.area] = (map[c.area] || 0) + c.tempoTrabalhado
+    })
+    return map
+  }, [colaboradoresFiltrados])
 
-  // Deriva os setores operacionais ativos diretamente das alocações da equipe
+  // Setores ativos = união das alocações da equipe + áreas com dados reais na planilha
   const setoresAtivos = useMemo(() => {
     const vistos = new Set<string>()
     equipe
@@ -55,20 +55,23 @@ export function Capacidade() {
           .filter(a => !BACKEND_SET.has(a.setor) && a.pct > 0)
           .forEach(a => vistos.add(a.setor))
       )
+    Object.keys(horasPorArea).forEach(area => vistos.add(area))
     return [...vistos].sort()
-  }, [equipe])
+  }, [equipe, horasPorArea])
 
   const setoresData = useMemo(() => setoresAtivos.map(setor => {
     const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
-    const peso = SETOR_WEIGHTS[setor] ?? 0
-    const consumo = totalHorasClientes * peso
+    const consumo = horasPorArea[setor] ?? 0
     const pct = cap > 0 ? consumo / cap : 0
     const status = calcStatusSetor(consumo, cap, params.gatilhoContratacaoPct)
     return { setor, cap, consumo, pct, status, folga: cap - consumo }
-  }), [equipe, params, totalHorasClientes, setoresAtivos])
+  }), [equipe, params, horasPorArea, setoresAtivos])
 
   const totalCap = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
-  const totalConsumo = totalHorasClientes
+  const totalConsumo = useMemo(
+    () => Object.values(horasPorArea).reduce((s, h) => s + h, 0),
+    [horasPorArea]
+  )
   const totalOcupacao = totalCap > 0 ? totalConsumo / totalCap : 0
   const totalFolga = totalCap - totalConsumo
 
@@ -78,27 +81,28 @@ export function Capacidade() {
   const precoMin = calcPrecoPorHoraMinimo(custoH, params.margemDesejadaPct)
   const precoRec = calcPrecoPorHoraRecomendado(precoMin, params.fatorComplexidadePct)
 
-  // Simulador: usa apenas setores com peso definido para calcular impacto
-  const setoresComPeso = setoresAtivos.filter(s => (SETOR_WEIGHTS[s] ?? 0) > 0)
-  const simSetores = setoresComPeso.map(setor => {
+  // Simulador: distribui horas do novo cliente proporcionalmente ao mix real da planilha
+  const simSetores = setoresAtivos.map(setor => {
     const base = setoresData.find(s => s.setor === setor)!
-    const novoConsumo = base.consumo + simHoras * (SETOR_WEIGHTS[setor] ?? 0)
+    const peso = totalConsumo > 0 ? (horasPorArea[setor] ?? 0) / totalConsumo : 0
+    const novoConsumo = base.consumo + simHoras * peso
     return { setor, novoConsumo, cap: base.cap, pct: base.cap > 0 ? novoConsumo / base.cap : 0 }
   })
   const gargalo = simSetores.find(s => s.pct >= 1)
   const simReceita = simHoras * precoRec
   const pacoteSugerido = [...PACOTES_BASE].sort((a, b) => Math.abs(a.horas - simHoras) - Math.abs(b.horas - simHoras))[0]
 
-  // Histórico por mês
-  const meses = [...new Set(clientes.map(c => c.mesAno))].sort()
+  // Histórico por mês: usa horas reais dos colaboradores agrupadas por área
+  const meses = sortMesAno([...new Set(colaboradores.map(c => c.mesAno))])
   const historicoData = meses.map(mes => {
-    const cMes = clientes.filter(c => c.mesAno === mes)
-    const hMes = cMes.reduce((s, c) => s + c.tempoTrabalhado, 0)
+    const horasMes: Record<string, number> = {}
+    colaboradores
+      .filter(c => c.mesAno === mes && !BACKEND_SET.has(c.area))
+      .forEach(c => { horasMes[c.area] = (horasMes[c.area] || 0) + c.tempoTrabalhado })
     const result: Record<string, number | string> = { mes }
     setoresAtivos.forEach(setor => {
       const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
-      const consumo = hMes * (SETOR_WEIGHTS[setor] ?? 0)
-      result[setor] = cap > 0 ? Math.round((consumo / cap) * 100) : 0
+      result[setor] = cap > 0 ? Math.round(((horasMes[setor] ?? 0) / cap) * 100) : 0
     })
     return result
   })
@@ -173,9 +177,6 @@ export function Capacidade() {
                 <span>Gatilho em {formatPercent(params.gatilhoContratacaoPct)}</span>
                 <span>{formatHours(cap * params.gatilhoContratacaoPct)}</span>
               </div>
-              {(SETOR_WEIGHTS[setor] ?? 0) === 0 && (
-                <p className="text-xs text-muted mt-2 italic">Consumo de clientes não mapeado para este setor</p>
-              )}
             </div>
           ))}
         </div>

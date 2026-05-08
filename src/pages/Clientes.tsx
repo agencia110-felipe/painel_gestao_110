@@ -11,6 +11,7 @@ import { ChartCard } from '@/components/charts/ChartCard'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useCustosStore } from '@/store/useCustosStore'
+import { useSheetsStore } from '@/store/useSheetsStore'
 import {
   calcClientesAnalise,
   calcReceitaMinimaCliente,
@@ -19,15 +20,16 @@ import {
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
 import { CLUSTER_COLORS } from '@/lib/constants'
-import type { ClienteAnalise } from '@/types'
+import type { ClienteAnalise, ClienteSheet } from '@/types'
 import { DollarSign, TrendingUp, Users, BarChart2 } from 'lucide-react'
 
 type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'horasMes'
 
 export function Clientes() {
-  const { clientesFiltrados, custoTotal, labelPeriodo, isRange, nMeses } = useFilteredSheets()
+  const { clientesFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro } = useFilteredSheets()
   const { params } = useConfigStore()
   const { equipe } = useCustosStore()
+  const { clientes } = useSheetsStore()
 
   const [clusterFiltro, setClusterFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
@@ -40,9 +42,31 @@ export function Clientes() {
 
   const custoPorHora = calcCustoPorHoraReal(custoTotal, horasFaturaveis)
 
+  const todosClientesMerged = useMemo((): ClienteSheet[] => {
+    const filtradoMap = new Map(clientesFiltrados.map(c => [c.cliente, c]))
+    const vistos = new Set<string>()
+    const resultado: ClienteSheet[] = []
+    for (const c of clientes) {
+      if (vistos.has(c.cliente)) continue
+      vistos.add(c.cliente)
+      resultado.push(
+        filtradoMap.get(c.cliente) ?? {
+          mesAno: mesesNoFiltro[0] || c.mesAno,
+          cluster: c.cluster,
+          cliente: c.cliente,
+          tempoTrabalhado: 0,
+          custoEfetivoOp: 0,
+          entradaContratual: 0,
+          custoOperacionalPct: 0,
+        }
+      )
+    }
+    return resultado
+  }, [clientes, clientesFiltrados, mesesNoFiltro])
+
   const analise = useMemo(
-    () => calcClientesAnalise(clientesFiltrados, custoTotal),
-    [clientesFiltrados, custoTotal]
+    () => calcClientesAnalise(todosClientesMerged, custoTotal),
+    [todosClientesMerged, custoTotal]
   )
 
   const clustersDisponiveis = useMemo(
@@ -185,16 +209,6 @@ export function Clientes() {
       render: row => <StatusBadge status={row.status} />,
     },
   ]
-
-  if (clientesFiltrados.length === 0) {
-    return (
-      <PageWrapper>
-        <div className="flex items-center justify-center h-64 text-muted text-sm">
-          Nenhum dado para o período selecionado
-        </div>
-      </PageWrapper>
-    )
-  }
 
   return (
     <PageWrapper>

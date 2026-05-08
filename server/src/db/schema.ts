@@ -1,13 +1,12 @@
-import { pgTable, text, real, boolean } from 'drizzle-orm/pg-core'
+import { pgTable, text, real, boolean, jsonb } from 'drizzle-orm/pg-core'
 
 export const equipe = pgTable('equipe', {
   id:           text('id').primaryKey(),
   nome:         text('nome').notNull(),
   cargo:        text('cargo').notNull(),
   salario:      real('salario').notNull(),
-  faturavelPct: real('faturavel_pct').notNull(),
-  backendPct:   real('backend_pct').notNull(),
-  setor:        text('setor').notNull(),
+  /** Array de {setor, pct} — soma deve ser 100. Setores backend: Financeiro, Comercial, RH. */
+  alocacoes:    jsonb('alocacoes').$type<Array<{ setor: string; pct: number }>>().notNull().default([]),
   socio:        boolean('socio').notNull().default(false),
   metaSalarial: real('meta_salarial').notNull(),
   status:       text('status').notNull().default('Ativo'),

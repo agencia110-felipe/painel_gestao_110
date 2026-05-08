@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Trash2, Plus, AlertTriangle } from 'lucide-react'
+import { useState, Fragment } from 'react'
+import { Trash2, Plus, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { MetricCard } from '@/components/shared/MetricCard'
@@ -17,14 +17,17 @@ import {
   calcHorasFaturaveisTotal,
   calcCustoPorHoraReal,
   calcPctBackend,
+  membroFaturavelPct,
+  membroBackendPct,
+  somaAlocacoes,
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
-import { CHART_COLORS } from '@/lib/constants'
-import type { EquipeMembro, CustoFixo } from '@/types'
+import { CHART_COLORS, SETOR_COLORS, TODOS_SETORES, SETORES_BACKEND_LIST } from '@/lib/constants'
+import type { EquipeMembro, CustoFixo, Alocacao } from '@/types'
 
 type TabId = 'equipe' | 'fixos' | 'variaveis' | 'resumo'
 
-const SETORES = ['Tráfego', 'Atendimento', 'Criação', 'Backend'] as const
+const BACKEND_SET = new Set<string>(SETORES_BACKEND_LIST)
 
 export function Custos() {
   const [activeTab, setActiveTab] = useState<TabId>('equipe')
@@ -75,6 +78,124 @@ export function Custos() {
   )
 }
 
+// ─── Pill de setor ─────────────────────────────────────────────────────────────
+
+function SetorPill({ setor, pct }: { setor: string; pct: number }) {
+  const bg = SETOR_COLORS[setor] || '#888'
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-white text-xs font-medium whitespace-nowrap"
+      style={{ backgroundColor: bg }}
+    >
+      {setor} <span className="opacity-80">{pct}%</span>
+    </span>
+  )
+}
+
+// ─── Editor de alocações inline ────────────────────────────────────────────────
+
+function AlocacoesEditor({
+  alocacoes,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  alocacoes: Alocacao[]
+  onChange: (a: Alocacao[]) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const soma = somaAlocacoes(alocacoes)
+  const somaOk = Math.round(soma) === 100
+
+  function addRow() {
+    const usados = new Set(alocacoes.map(a => a.setor))
+    const proximo = TODOS_SETORES.find(s => !usados.has(s)) || TODOS_SETORES[0]
+    onChange([...alocacoes, { setor: proximo, pct: 0 }])
+  }
+
+  function updateRow(idx: number, field: keyof Alocacao, value: string | number) {
+    const next = alocacoes.map((a, i) =>
+      i === idx ? { ...a, [field]: field === 'pct' ? Number(value) : value } : a
+    )
+    onChange(next)
+  }
+
+  function removeRow(idx: number) {
+    onChange(alocacoes.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div className="bg-neutral/5 rounded-lg p-4 space-y-3">
+      <p className="text-xs font-medium text-neutral uppercase tracking-wide">Alocações por setor</p>
+
+      <div className="space-y-2">
+        {alocacoes.map((a, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <select
+              value={a.setor}
+              onChange={e => updateRow(idx, 'setor', e.target.value)}
+              className="flex-1 border border-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              {TODOS_SETORES.map(s => (
+                <option key={s} value={s}>{s}{BACKEND_SET.has(s) ? ' (backend)' : ''}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={a.pct}
+              onChange={e => updateRow(idx, 'pct', e.target.value)}
+              className="w-20 border border-border rounded-lg px-2 py-1.5 text-sm text-right bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <span className="text-sm text-muted">%</span>
+            <button
+              onClick={() => removeRow(idx)}
+              className="text-muted hover:text-danger transition-colors"
+              disabled={alocacoes.length === 1}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={addRow}
+          className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+        >
+          <Plus size={12} /> Adicionar setor
+        </button>
+        <span className="ml-auto text-xs">
+          Soma:{' '}
+          <span className={somaOk ? 'text-success font-semibold' : 'text-danger font-semibold'}>
+            {soma}%
+          </span>
+          {!somaOk && <span className="text-danger ml-1">— deve ser 100%</span>}
+        </span>
+      </div>
+
+      <div className="flex gap-2 pt-1 border-t border-border">
+        <button
+          onClick={onSave}
+          disabled={!somaOk}
+          className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Salvar
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-3 py-1.5 border border-border rounded-lg text-xs text-muted hover:text-neutral transition-colors"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Tab Equipe ────────────────────────────────────────────────────────────────
 
 function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, updateMembro, removeMembro, toggleStatus, addMembro }: {
@@ -89,15 +210,30 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
   addMembro: (m: Omit<EquipeMembro, 'id'>) => void
 }) {
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editAlocs, setEditAlocs] = useState<Alocacao[]>([])
   const [novo, setNovo] = useState<Omit<EquipeMembro, 'id'>>({
-    nome: '', cargo: '', salario: 0, faturavelPct: 1, backendPct: 0,
-    setor: 'Tráfego', socio: false, metaSalarial: 0, status: 'Ativo',
+    nome: '', cargo: '', salario: 0,
+    alocacoes: [{ setor: 'Tráfego', pct: 100 }],
+    socio: false, metaSalarial: 0, status: 'Ativo',
   })
+  const [novoAlocs, setNovoAlocs] = useState<Alocacao[]>([{ setor: 'Tráfego', pct: 100 }])
+
+  function openEditAlocs(m: EquipeMembro) {
+    setEditingId(m.id)
+    setEditAlocs(m.alocacoes.map(a => ({ ...a })))
+  }
+
+  function saveAlocs(id: string) {
+    updateMembro(id, { alocacoes: editAlocs })
+    setEditingId(null)
+  }
 
   function handleAdd() {
     if (!novo.nome.trim()) return
-    addMembro(novo)
-    setNovo({ nome: '', cargo: '', salario: 0, faturavelPct: 1, backendPct: 0, setor: 'Tráfego', socio: false, metaSalarial: 0, status: 'Ativo' })
+    addMembro({ ...novo, alocacoes: novoAlocs })
+    setNovo({ nome: '', cargo: '', salario: 0, alocacoes: [{ setor: 'Tráfego', pct: 100 }], socio: false, metaSalarial: 0, status: 'Ativo' })
+    setNovoAlocs([{ setor: 'Tráfego', pct: 100 }])
     setShowForm(false)
   }
 
@@ -121,9 +257,9 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
               <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Nome</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Cargo</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Salário</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">% Fat.</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">% Back.</th>
-              <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Setor</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Setores / Alocação</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Fat.%</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Back.%</th>
               <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Sócio</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Meta Sal.</th>
               <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Status</th>
@@ -132,88 +268,99 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
           </thead>
           <tbody>
             {equipe.map(m => (
-              <tr key={m.id} className={`border-b border-border last:border-0 ${m.status === 'Inativo' ? 'opacity-50' : ''}`}>
-                <td className="px-4 py-2">
-                  <input
-                    className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={m.nome}
-                    onBlur={e => updateMembro(m.id, { nome: e.target.value })}
-                  />
-                </td>
-                <td className="px-4 py-2">
-                  <input
-                    className="w-full text-sm text-muted bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={m.cargo}
-                    onBlur={e => updateMembro(m.id, { cargo: e.target.value })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <input
-                    type="number"
-                    className="w-24 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={m.salario}
-                    onBlur={e => updateMembro(m.id, { salario: Number(e.target.value) })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <input
-                    type="number" min="0" max="100" step="5"
-                    className="w-16 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={Math.round(m.faturavelPct * 100)}
-                    onBlur={e => updateMembro(m.id, { faturavelPct: Number(e.target.value) / 100 })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <input
-                    type="number" min="0" max="100" step="5"
-                    className="w-16 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={Math.round(m.backendPct * 100)}
-                    onBlur={e => updateMembro(m.id, { backendPct: Number(e.target.value) / 100 })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <select
-                    className="text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1 cursor-pointer"
-                    value={m.setor}
-                    onChange={e => updateMembro(m.id, { setor: e.target.value as EquipeMembro['setor'] })}
-                  >
-                    {SETORES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <input
-                    type="checkbox"
-                    checked={m.socio}
-                    onChange={e => updateMembro(m.id, { socio: e.target.checked })}
-                    className="w-4 h-4 accent-primary cursor-pointer"
-                  />
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <input
-                    type="number"
-                    className="w-24 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
-                    defaultValue={m.metaSalarial}
-                    onBlur={e => updateMembro(m.id, { metaSalarial: Number(e.target.value) })}
-                  />
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <button
-                    onClick={() => toggleStatus(m.id)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                      m.status === 'Ativo'
-                        ? 'bg-success-bg text-success'
-                        : 'bg-danger-bg text-danger'
-                    }`}
-                  >
-                    {m.status}
-                  </button>
-                </td>
-                <td className="px-4 py-2 text-center">
-                  <button onClick={() => removeMembro(m.id)} className="text-muted hover:text-danger transition-colors">
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
+              <Fragment key={m.id}>
+                <tr className={`border-b border-border ${editingId === m.id ? '' : 'last:border-0'} ${m.status === 'Inativo' ? 'opacity-50' : ''}`}>
+                  <td className="px-4 py-2">
+                    <input
+                      className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                      defaultValue={m.nome}
+                      onBlur={e => updateMembro(m.id, { nome: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input
+                      className="w-full text-sm text-muted bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                      defaultValue={m.cargo}
+                      onBlur={e => updateMembro(m.id, { cargo: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <input
+                      type="number"
+                      className="w-24 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                      defaultValue={m.salario}
+                      onBlur={e => updateMembro(m.id, { salario: Number(e.target.value) })}
+                    />
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {m.alocacoes.map((a, i) => (
+                        <SetorPill key={i} setor={a.setor} pct={a.pct} />
+                      ))}
+                      <button
+                        onClick={() => editingId === m.id ? setEditingId(null) : openEditAlocs(m)}
+                        className="ml-1 text-muted hover:text-primary transition-colors"
+                        title="Editar alocações"
+                      >
+                        {editingId === m.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-right text-sm font-medium text-neutral">
+                    {Math.round(membroFaturavelPct(m) * 100)}%
+                  </td>
+                  <td className="px-4 py-2 text-right text-sm font-medium text-neutral">
+                    {Math.round(membroBackendPct(m) * 100)}%
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={m.socio}
+                      onChange={e => updateMembro(m.id, { socio: e.target.checked })}
+                      className="w-4 h-4 accent-primary cursor-pointer"
+                    />
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <input
+                      type="number"
+                      className="w-24 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                      defaultValue={m.metaSalarial}
+                      onBlur={e => updateMembro(m.id, { metaSalarial: Number(e.target.value) })}
+                    />
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button
+                      onClick={() => toggleStatus(m.id)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                        m.status === 'Ativo'
+                          ? 'bg-success-bg text-success'
+                          : 'bg-danger-bg text-danger'
+                      }`}
+                    >
+                      {m.status}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button onClick={() => removeMembro(m.id)} className="text-muted hover:text-danger transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+
+                {/* Linha expandida do editor de alocações */}
+                {editingId === m.id && (
+                  <tr className="border-b border-border">
+                    <td colSpan={10} className="px-4 py-3">
+                      <AlocacoesEditor
+                        alocacoes={editAlocs}
+                        onChange={setEditAlocs}
+                        onSave={() => saveAlocs(m.id)}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -243,20 +390,6 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
               <input type="number" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.salario} onChange={e => setNovo(p => ({ ...p, salario: Number(e.target.value) }))} />
             </div>
             <div>
-              <label className="text-xs text-muted mb-1 block">Setor</label>
-              <select className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white" value={novo.setor} onChange={e => setNovo(p => ({ ...p, setor: e.target.value as EquipeMembro['setor'] }))}>
-                {SETORES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-muted mb-1 block">% Faturável (0-100)</label>
-              <input type="number" min="0" max="100" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={Math.round(novo.faturavelPct * 100)} onChange={e => setNovo(p => ({ ...p, faturavelPct: Number(e.target.value) / 100 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted mb-1 block">% Backend (0-100)</label>
-              <input type="number" min="0" max="100" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={Math.round(novo.backendPct * 100)} onChange={e => setNovo(p => ({ ...p, backendPct: Number(e.target.value) / 100 }))} />
-            </div>
-            <div>
               <label className="text-xs text-muted mb-1 block">Meta Salarial (R$)</label>
               <input type="number" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.metaSalarial} onChange={e => setNovo(p => ({ ...p, metaSalarial: Number(e.target.value) }))} />
             </div>
@@ -267,8 +400,66 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
               </label>
             </div>
           </div>
+
+          <div>
+            <label className="text-xs text-muted mb-2 block">Alocações por setor (soma deve ser 100%)</label>
+            <div className="space-y-2 mb-2">
+              {novoAlocs.map((a, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <select
+                    value={a.setor}
+                    onChange={e => setNovoAlocs(prev => prev.map((x, i) => i === idx ? { ...x, setor: e.target.value } : x))}
+                    className="flex-1 border border-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    {TODOS_SETORES.map(s => (
+                      <option key={s} value={s}>{s}{BACKEND_SET.has(s) ? ' (backend)' : ''}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number" min="0" max="100"
+                    value={a.pct}
+                    onChange={e => setNovoAlocs(prev => prev.map((x, i) => i === idx ? { ...x, pct: Number(e.target.value) } : x))}
+                    className="w-20 border border-border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                  <span className="text-sm text-muted">%</span>
+                  <button
+                    onClick={() => setNovoAlocs(prev => prev.filter((_, i) => i !== idx))}
+                    className="text-muted hover:text-danger"
+                    disabled={novoAlocs.length === 1}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const usados = new Set(novoAlocs.map(a => a.setor))
+                  const proximo = TODOS_SETORES.find(s => !usados.has(s)) || TODOS_SETORES[0]
+                  setNovoAlocs(prev => [...prev, { setor: proximo, pct: 0 }])
+                }}
+                className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+              >
+                <Plus size={12} /> Adicionar setor
+              </button>
+              <span className="ml-auto text-xs">
+                Soma:{' '}
+                <span className={Math.round(somaAlocacoes(novoAlocs)) === 100 ? 'text-success font-semibold' : 'text-danger font-semibold'}>
+                  {somaAlocacoes(novoAlocs)}%
+                </span>
+              </span>
+            </div>
+          </div>
+
           <div className="flex gap-3">
-            <button onClick={handleAdd} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">Salvar</button>
+            <button
+              onClick={handleAdd}
+              disabled={Math.round(somaAlocacoes(novoAlocs)) !== 100}
+              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Salvar
+            </button>
             <button onClick={() => setShowForm(false)} className="px-4 py-2 border border-border rounded-lg text-sm text-muted hover:text-neutral transition-colors">Cancelar</button>
           </div>
         </div>
@@ -584,7 +775,7 @@ function TabResumo({ equipe, fixos, variaveis, params }: {
           <div className="text-sm text-primary">
             <p className="font-medium mb-1">Como o custo/hora real é calculado</p>
             <p>Custo total ÷ horas faturáveis = {formatCurrency(totalGeral)} ÷ {formatHours(horasFat)} = <strong>{formatCurrency(custoH)}/h</strong></p>
-            <p className="mt-1 text-xs opacity-80">Horas faturáveis = Σ(horas/mês × aproveitamento × % faturável de cada membro ativo). Atualmente: {params.horasMes}h × {formatPercent(params.aproveitamentoPct)} aproveitamento.</p>
+            <p className="mt-1 text-xs opacity-80">Horas faturáveis = Σ(horas/mês × aproveitamento × % faturável de cada membro ativo). O % faturável é derivado automaticamente das alocações: setores Financeiro, Comercial e RH contam como backend.</p>
           </div>
         </div>
       </div>

@@ -21,6 +21,7 @@ import {
   calcCustoBackendEquipe,
   calcCustoBackendFixos,
   calcTotalFolha,
+  membroFaturavelPct,
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
 import { CHART_COLORS } from '@/lib/constants'
@@ -120,7 +121,7 @@ export function Dashboard() {
   const folhaFaturavel = useMemo(() => {
     return equipe
       .filter(m => m.status === 'Ativo')
-      .reduce((s, m) => s + m.salario * m.faturavelPct, 0)
+      .reduce((s, m) => s + m.salario * membroFaturavelPct(m), 0)
   }, [equipe])
 
   const backendEquipe = useMemo(() => calcCustoBackendEquipe(equipe), [equipe])

@@ -13,19 +13,50 @@ import { useSheetsStore } from '@/store/useSheetsStore'
 import { calcColaboradoresAnalise } from '@/lib/calculations'
 import { formatPercent, formatHours, formatNumber } from '@/lib/formatters'
 import { SETOR_COLORS, CHART_COLORS } from '@/lib/constants'
-import type { ColaboradorAnalise } from '@/types'
+import type { ColaboradorAnalise, ColaboradorSheet } from '@/types'
 import { Users, Clock, TrendingUp, AlertTriangle, Star, Activity } from 'lucide-react'
 
 export function Colaboradores() {
-  const { colaboradoresFiltrados, labelPeriodo, isRange } = useFilteredSheets()
+  const { colaboradoresFiltrados, mesesNoFiltro, labelPeriodo } = useFilteredSheets()
   const { colaboradores } = useSheetsStore()
 
   const [areaFiltro, setAreaFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
 
+  // Merge: todos os colaboradores únicos da planilha inteira.
+  // Quem não tem dados no período selecionado aparece com zeros.
+  const todosColaboradoresMerged = useMemo((): ColaboradorSheet[] => {
+    const filtradoMap = new Map(colaboradoresFiltrados.map(c => [c.colaborador, c]))
+    const vistos = new Set<string>()
+    const resultado: ColaboradorSheet[] = []
+
+    for (const c of colaboradores) {
+      if (vistos.has(c.colaborador)) continue
+      vistos.add(c.colaborador)
+
+      if (filtradoMap.has(c.colaborador)) {
+        resultado.push(filtradoMap.get(c.colaborador)!)
+      } else {
+        resultado.push({
+          mesAno: mesesNoFiltro[0] || 'n/a',
+          colaborador: c.colaborador,
+          area: c.area,
+          tempoTrabalhado: 0,
+          tempoArredondado: 0,
+          custoEfetivoOp: 0,
+          totalJobs: 0,
+          percentualEntregas: 0,
+          cargaHoraria80pct: c.cargaHoraria80pct,
+          cargaHorariaMes: c.cargaHorariaMes,
+        })
+      }
+    }
+    return resultado
+  }, [colaboradores, colaboradoresFiltrados, mesesNoFiltro])
+
   const analise = useMemo(
-    () => calcColaboradoresAnalise(colaboradoresFiltrados),
-    [colaboradoresFiltrados]
+    () => calcColaboradoresAnalise(todosColaboradoresMerged),
+    [todosColaboradoresMerged]
   )
 
   const areasDisponiveis = useMemo(
@@ -225,22 +256,19 @@ export function Colaboradores() {
     [dadosFiltrados]
   )
 
-  if (colaboradoresFiltrados.length === 0) {
-    return (
-      <PageWrapper>
-        <div className="flex items-center justify-center h-64 text-muted text-sm">
-          Nenhum dado para o período selecionado
-        </div>
-      </PageWrapper>
-    )
-  }
-
   return (
     <PageWrapper>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral">Análise de Colaboradores</h1>
-        <p className="text-sm text-muted mt-1">Ocupação e performance da equipe — {labelPeriodo}</p>
+        <p className="text-sm text-muted mt-1">
+          Ocupação e performance da equipe — {labelPeriodo}
+          {analise.length > colaboradoresFiltrados.length && (
+            <span className="ml-2 text-warning">
+              · {analise.length - colaboradoresFiltrados.length} sem dados neste período
+            </span>
+          )}
+        </p>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
@@ -280,7 +308,7 @@ export function Colaboradores() {
       {/* ── KPIs ────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         <MetricCard
-          label="Colaboradores Ativos"
+          label="Colaboradores"
           value={String(totalAtivos)}
           icon={<Users size={16} />}
         />
@@ -319,11 +347,17 @@ export function Colaboradores() {
 
       {/* ── Table ───────────────────────────────────────────────────────────── */}
       <div className="mb-8">
-        <DataTable
-          columns={columns}
-          data={dadosFiltrados}
-          keyExtractor={(_, i) => String(i)}
-        />
+        {dadosFiltrados.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-muted text-sm">
+            Nenhum colaborador encontrado para os filtros selecionados
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={dadosFiltrados}
+            keyExtractor={(_, i) => String(i)}
+          />
+        )}
       </div>
 
       {/* ── Charts row 1 ────────────────────────────────────────────────────── */}

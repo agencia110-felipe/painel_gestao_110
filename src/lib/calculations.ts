@@ -1,5 +1,6 @@
 import type {
   EquipeMembro,
+  Alocacao,
   CustoFixo,
   CustoVariavel,
   ClienteSheet,
@@ -11,6 +12,27 @@ import type {
   PacoteBase,
   PacoteCalculado,
 } from '@/types'
+
+// Setores que contam como custo de backend (não faturável)
+const BACKEND_SET = new Set(['Financeiro', 'Comercial', 'RH'])
+
+// ─── Helpers de alocação ─────────────────────────────────────────────────────
+
+export function membroFaturavelPct(m: Pick<EquipeMembro, 'alocacoes'>): number {
+  return m.alocacoes
+    .filter(a => !BACKEND_SET.has(a.setor))
+    .reduce((s, a) => s + a.pct, 0) / 100
+}
+
+export function membroBackendPct(m: Pick<EquipeMembro, 'alocacoes'>): number {
+  return m.alocacoes
+    .filter(a => BACKEND_SET.has(a.setor))
+    .reduce((s, a) => s + a.pct, 0) / 100
+}
+
+export function somaAlocacoes(alocacoes: Alocacao[]): number {
+  return alocacoes.reduce((s, a) => s + a.pct, 0)
+}
 
 // ─── Custos base ─────────────────────────────────────────────────────────────
 
@@ -39,7 +61,9 @@ export function calcCustoTotalMensal(
 // ─── Backend ─────────────────────────────────────────────────────────────────
 
 export function calcCustoBackendEquipe(equipe: EquipeMembro[]): number {
-  return equipe.filter(m => m.status === 'Ativo').reduce((s, m) => s + m.salario * m.backendPct, 0)
+  return equipe
+    .filter(m => m.status === 'Ativo')
+    .reduce((s, m) => s + m.salario * membroBackendPct(m), 0)
 }
 
 export function calcCustoBackendFixos(fixos: CustoFixo[]): number {
@@ -65,7 +89,7 @@ export function calcHorasFaturaveisTotal(
 ): number {
   return equipe
     .filter(m => m.status === 'Ativo')
-    .reduce((s, m) => s + horasMes * aproveitamentoPct * m.faturavelPct, 0)
+    .reduce((s, m) => s + horasMes * aproveitamentoPct * membroFaturavelPct(m), 0)
 }
 
 export function calcCustoPorHoraReal(custoTotal: number, horasFaturaveis: number): number {
@@ -203,6 +227,10 @@ export function calcColaboradoresAnalise(
 
 // ─── Capacidade por setor ────────────────────────────────────────────────────
 
+/**
+ * Calcula horas faturáveis disponíveis para um setor específico,
+ * somando a alocação de cada membro ativo naquele setor.
+ */
 export function calcCapacidadeSetor(
   equipe: EquipeMembro[],
   setor: string,
@@ -210,8 +238,12 @@ export function calcCapacidadeSetor(
   aproveitamentoPct: number
 ): number {
   return equipe
-    .filter(m => m.status === 'Ativo' && m.setor === setor)
-    .reduce((s, m) => s + horasMes * aproveitamentoPct * m.faturavelPct, 0)
+    .filter(m => m.status === 'Ativo')
+    .reduce((s, m) => {
+      const aloc = m.alocacoes.find(a => a.setor === setor)
+      if (!aloc || aloc.pct === 0) return s
+      return s + horasMes * aproveitamentoPct * (aloc.pct / 100)
+    }, 0)
 }
 
 export function calcStatusSetor(

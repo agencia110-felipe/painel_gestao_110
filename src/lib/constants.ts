@@ -21,6 +21,30 @@ export const PACOTES_BASE: PacoteBase[] = [
   { nome: 'Gigante',  horas: 200, precoAntigo: 18000 },
 ]
 
+// ─── Setores ─────────────────────────────────────────────────────────────────
+
+/** Setores faturáveis (geram receita para a agência) */
+export const SETORES_OPERACIONAIS = [
+  'Atendimento',
+  'Tráfego',
+  'Redação',
+  'Revisão',
+  'Criação',
+  'Inbound',
+  'Monitoramento',
+  'Mídia',
+  'Gestão',
+] as const
+
+/** Setores de backend (custo não faturável — reduz a capacidade faturável) */
+export const SETORES_BACKEND_LIST = [
+  'Financeiro',
+  'Comercial',
+  'RH',
+] as const
+
+export const TODOS_SETORES = [...SETORES_OPERACIONAIS, ...SETORES_BACKEND_LIST] as const
+
 export const STATUS_COLORS = {
   'Saudável':         { bg: '#EBF8EF', text: '#2D8A45', border: '#2D8A45' },
   'Atenção':          { bg: '#FFF3CC', text: '#E69500', border: '#E69500' },
@@ -48,13 +72,22 @@ export const CHART_COLORS = {
 }
 
 export const SETOR_COLORS: Record<string, string> = {
-  'Tráfego':     '#1A3A5C',
-  'Atendimento': '#2D6A9F',
-  'Criação':     '#7C3AED',
-  'Backend':     '#888888',
-  'Gestão':      '#0D9488',
-  'Mídia':       '#1A3A5C',
-  'Redação':     '#DB2777',
+  // Operacionais
+  'Atendimento':  '#2D6A9F',
+  'Tráfego':      '#1A3A5C',
+  'Redação':      '#DB2777',
+  'Revisão':      '#F59E0B',
+  'Criação':      '#7C3AED',
+  'Inbound':      '#4338CA',
+  'Monitoramento':'#EA580C',
+  'Mídia':        '#0891B2',
+  'Gestão':       '#0D9488',
+  // Backend
+  'Financeiro':   '#6B7280',
+  'Comercial':    '#059669',
+  'RH':           '#B45309',
+  // Legado (mantido para compatibilidade com dados antigos na planilha)
+  'Backend':      '#888888',
 }
 
 export const CLUSTER_COLORS: Record<string, string> = {

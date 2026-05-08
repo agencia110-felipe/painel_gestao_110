@@ -17,22 +17,18 @@ import {
   calcPrecoPorHoraRecomendado,
 } from '@/lib/calculations'
 import { formatCurrency, formatHours, formatPercent } from '@/lib/formatters'
-import { CHART_COLORS, PACOTES_BASE } from '@/lib/constants'
+import { CHART_COLORS, SETOR_COLORS, PACOTES_BASE, SETORES_BACKEND_LIST } from '@/lib/constants'
 
-const SETORES = ['Tráfego', 'Atendimento', 'Criação'] as const
-type Setor = typeof SETORES[number]
-
-const SETOR_WEIGHTS: Record<Setor, number> = {
-  'Tráfego': 0.6,
+// Pesos de distribuição de horas de clientes por setor.
+// Apenas os 3 setores principais têm peso real (soma = 1.0).
+// Novos setores aparecem com capacidade mas sem consumo de cliente mapeado.
+const SETOR_WEIGHTS: Record<string, number> = {
+  'Tráfego':     0.60,
   'Atendimento': 0.25,
-  'Criação': 0.15,
+  'Criação':     0.15,
 }
 
-const SETOR_COLORS: Record<Setor, string> = {
-  'Tráfego': CHART_COLORS.primary,
-  'Atendimento': CHART_COLORS.secondary,
-  'Criação': CHART_COLORS.purple,
-}
+const BACKEND_SET = new Set<string>(SETORES_BACKEND_LIST)
 
 function progressColor(pct: number): string {
   if (pct >= 0.85) return '#C0392B'
@@ -49,13 +45,27 @@ export function Capacidade() {
 
   const totalHorasClientes = clientesFiltrados.reduce((s, c) => s + c.tempoTrabalhado, 0)
 
-  const setoresData = useMemo(() => SETORES.map(setor => {
+  // Deriva os setores operacionais ativos diretamente das alocações da equipe
+  const setoresAtivos = useMemo(() => {
+    const vistos = new Set<string>()
+    equipe
+      .filter(m => m.status === 'Ativo')
+      .forEach(m =>
+        m.alocacoes
+          .filter(a => !BACKEND_SET.has(a.setor) && a.pct > 0)
+          .forEach(a => vistos.add(a.setor))
+      )
+    return [...vistos].sort()
+  }, [equipe])
+
+  const setoresData = useMemo(() => setoresAtivos.map(setor => {
     const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
-    const consumo = totalHorasClientes * SETOR_WEIGHTS[setor]
+    const peso = SETOR_WEIGHTS[setor] ?? 0
+    const consumo = totalHorasClientes * peso
     const pct = cap > 0 ? consumo / cap : 0
     const status = calcStatusSetor(consumo, cap, params.gatilhoContratacaoPct)
     return { setor, cap, consumo, pct, status, folga: cap - consumo }
-  }), [equipe, params, totalHorasClientes])
+  }), [equipe, params, totalHorasClientes, setoresAtivos])
 
   const totalCap = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
   const totalConsumo = totalHorasClientes
@@ -68,25 +78,26 @@ export function Capacidade() {
   const precoMin = calcPrecoPorHoraMinimo(custoH, params.margemDesejadaPct)
   const precoRec = calcPrecoPorHoraRecomendado(precoMin, params.fatorComplexidadePct)
 
-  // Simulador
-  const simSetores = SETORES.map(setor => {
-    const novoConsumo = setoresData.find(s => s.setor === setor)!.consumo + simHoras * SETOR_WEIGHTS[setor]
-    const cap = setoresData.find(s => s.setor === setor)!.cap
-    return { setor, novoConsumo, cap, pct: cap > 0 ? novoConsumo / cap : 0 }
+  // Simulador: usa apenas setores com peso definido para calcular impacto
+  const setoresComPeso = setoresAtivos.filter(s => (SETOR_WEIGHTS[s] ?? 0) > 0)
+  const simSetores = setoresComPeso.map(setor => {
+    const base = setoresData.find(s => s.setor === setor)!
+    const novoConsumo = base.consumo + simHoras * (SETOR_WEIGHTS[setor] ?? 0)
+    return { setor, novoConsumo, cap: base.cap, pct: base.cap > 0 ? novoConsumo / base.cap : 0 }
   })
   const gargalo = simSetores.find(s => s.pct >= 1)
   const simReceita = simHoras * precoRec
   const pacoteSugerido = [...PACOTES_BASE].sort((a, b) => Math.abs(a.horas - simHoras) - Math.abs(b.horas - simHoras))[0]
 
-  // Histórico por mês (mock baseado em meses disponíveis)
+  // Histórico por mês
   const meses = [...new Set(clientes.map(c => c.mesAno))].sort()
   const historicoData = meses.map(mes => {
     const cMes = clientes.filter(c => c.mesAno === mes)
     const hMes = cMes.reduce((s, c) => s + c.tempoTrabalhado, 0)
     const result: Record<string, number | string> = { mes }
-    SETORES.forEach(setor => {
+    setoresAtivos.forEach(setor => {
       const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
-      const consumo = hMes * SETOR_WEIGHTS[setor]
+      const consumo = hMes * (SETOR_WEIGHTS[setor] ?? 0)
       result[setor] = cap > 0 ? Math.round((consumo / cap) * 100) : 0
     })
     return result
@@ -112,48 +123,63 @@ export function Capacidade() {
       </div>
 
       {/* Setor cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
-        {setoresData.map(({ setor, cap, consumo, pct, status, folga }) => (
-          <div key={setor} className="bg-white rounded-xl border border-border p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-neutral">{setor}</h3>
-              <StatusBadge status={status} size="sm" />
-            </div>
-            <div className="mb-3">
-              <div className="flex justify-between text-xs text-muted mb-1.5">
-                <span>{formatHours(consumo)} consumidas</span>
-                <span>{formatHours(cap)} capacidade</span>
+      {setoresData.length === 0 ? (
+        <div className="bg-white rounded-xl border border-border p-8 text-center text-muted text-sm mb-6">
+          Nenhum membro ativo com alocação em setores operacionais.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 mb-6">
+          {setoresData.map(({ setor, cap, consumo, pct, status, folga }) => (
+            <div key={setor} className="bg-white rounded-xl border border-border p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full"
+                    style={{ backgroundColor: SETOR_COLORS[setor] || '#888' }}
+                  />
+                  <h3 className="font-semibold text-neutral">{setor}</h3>
+                </div>
+                <StatusBadge status={status} size="sm" />
               </div>
-              <div className="h-2.5 bg-neutral/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{ width: `${Math.min(pct * 100, 100)}%`, backgroundColor: progressColor(pct) }}
-                />
+              <div className="mb-3">
+                <div className="flex justify-between text-xs text-muted mb-1.5">
+                  <span>{formatHours(consumo)} consumidas</span>
+                  <span>{formatHours(cap)} capacidade</span>
+                </div>
+                <div className="h-2.5 bg-neutral/10 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${Math.min(pct * 100, 100)}%`, backgroundColor: progressColor(pct) }}
+                  />
+                </div>
+                {/* Gatilho marker */}
+                <div className="relative h-1 mt-0.5">
+                  <div
+                    className="absolute w-0.5 h-3 bg-warning -top-1 opacity-60"
+                    style={{ left: `${params.gatilhoContratacaoPct * 100}%` }}
+                    title={`Gatilho ${formatPercent(params.gatilhoContratacaoPct)}`}
+                  />
+                </div>
               </div>
-              {/* Gatilho marker */}
-              <div className="relative h-1 mt-0.5">
-                <div
-                  className="absolute w-0.5 h-3 bg-warning -top-1 opacity-60"
-                  style={{ left: `${params.gatilhoContratacaoPct * 100}%` }}
-                  title={`Gatilho ${formatPercent(params.gatilhoContratacaoPct)}`}
-                />
+              <div className="flex justify-between text-sm mt-3">
+                <span className="text-muted">Ocupação</span>
+                <span className="font-semibold" style={{ color: progressColor(pct) }}>{formatPercent(pct)}</span>
               </div>
+              <div className="flex justify-between text-sm mt-1">
+                <span className="text-muted">{folga >= 0 ? 'Folga' : 'Excedente'}</span>
+                <span className={`font-medium ${folga >= 0 ? 'text-success' : 'text-danger'}`}>{formatHours(Math.abs(folga))}</span>
+              </div>
+              <div className="flex justify-between text-xs mt-1 text-muted">
+                <span>Gatilho em {formatPercent(params.gatilhoContratacaoPct)}</span>
+                <span>{formatHours(cap * params.gatilhoContratacaoPct)}</span>
+              </div>
+              {(SETOR_WEIGHTS[setor] ?? 0) === 0 && (
+                <p className="text-xs text-muted mt-2 italic">Consumo de clientes não mapeado para este setor</p>
+              )}
             </div>
-            <div className="flex justify-between text-sm mt-3">
-              <span className="text-muted">Ocupação</span>
-              <span className="font-semibold" style={{ color: progressColor(pct) }}>{formatPercent(pct)}</span>
-            </div>
-            <div className="flex justify-between text-sm mt-1">
-              <span className="text-muted">{folga >= 0 ? 'Folga' : 'Excedente'}</span>
-              <span className={`font-medium ${folga >= 0 ? 'text-success' : 'text-danger'}`}>{formatHours(Math.abs(folga))}</span>
-            </div>
-            <div className="flex justify-between text-xs mt-1 text-muted">
-              <span>Gatilho em {formatPercent(params.gatilhoContratacaoPct)}</span>
-              <span>{formatHours(cap * params.gatilhoContratacaoPct)}</span>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Simulator */}
       <div className="bg-white rounded-xl border border-border p-5 mb-6">
@@ -202,7 +228,7 @@ export function Capacidade() {
       </div>
 
       {/* History chart */}
-      {historicoData.length >= 2 && (
+      {historicoData.length >= 2 && setoresAtivos.length > 0 && (
         <div className="bg-white rounded-xl border border-border p-5">
           <h3 className="font-semibold text-neutral text-sm mb-1">Histórico de Ocupação por Setor</h3>
           <p className="text-xs text-muted mb-4">% de ocupação por setor ao longo dos meses</p>
@@ -213,15 +239,15 @@ export function Capacidade() {
               <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v}%`} domain={[0, 110]} />
               <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
               <ReferenceLine y={85} stroke={CHART_COLORS.warning} strokeDasharray="4 4" label={{ value: 'Gatilho 85%', position: 'right', fontSize: 11, fill: CHART_COLORS.warning }} />
-              {SETORES.map(setor => (
-                <Line key={setor} type="monotone" dataKey={setor} stroke={SETOR_COLORS[setor]} strokeWidth={2} dot={{ r: 3 }} />
+              {setoresAtivos.map(setor => (
+                <Line key={setor} type="monotone" dataKey={setor} stroke={SETOR_COLORS[setor] || '#888'} strokeWidth={2} dot={{ r: 3 }} />
               ))}
             </LineChart>
           </ResponsiveContainer>
-          <div className="flex gap-4 mt-2 justify-center">
-            {SETORES.map(setor => (
+          <div className="flex flex-wrap gap-4 mt-2 justify-center">
+            {setoresAtivos.map(setor => (
               <span key={setor} className="flex items-center gap-1.5 text-xs text-muted">
-                <span className="w-3 h-0.5 rounded inline-block" style={{ backgroundColor: SETOR_COLORS[setor] }}></span>
+                <span className="w-3 h-0.5 rounded inline-block" style={{ backgroundColor: SETOR_COLORS[setor] || '#888' }}></span>
                 {setor}
               </span>
             ))}

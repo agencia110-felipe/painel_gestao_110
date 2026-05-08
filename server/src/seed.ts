@@ -5,14 +5,46 @@ import { equipe, custosFixos } from './db/schema'
 import { count } from 'drizzle-orm'
 
 const equipeInicial = [
-  { id: '1', nome: 'Jana Fonseca',   cargo: 'Gestão / Atendimento',   salario: 10000, faturavelPct: 0.70, backendPct: 0.30, setor: 'Atendimento', socio: true,  metaSalarial: 12000, status: 'Ativo' },
-  { id: '2', nome: 'Felipe Mariot',  cargo: 'Tráfego / Comercial',    salario: 10000, faturavelPct: 0.70, backendPct: 0.30, setor: 'Tráfego',     socio: true,  metaSalarial: 15000, status: 'Ativo' },
-  { id: '3', nome: 'Pedro Lima',     cargo: 'Financeiro / Comercial', salario: 10000, faturavelPct: 0.30, backendPct: 0.70, setor: 'Backend',     socio: true,  metaSalarial: 15000, status: 'Ativo' },
-  { id: '4', nome: 'Matheus Valle',  cargo: 'Tráfego pago',           salario: 6059,  faturavelPct: 1.00, backendPct: 0.00, setor: 'Tráfego',     socio: false, metaSalarial: 6059,  status: 'Ativo' },
-  { id: '5', nome: 'Rebeca Mileski', cargo: 'Atendimento',            salario: 8322,  faturavelPct: 1.00, backendPct: 0.00, setor: 'Atendimento', socio: false, metaSalarial: 8322,  status: 'Ativo' },
-  { id: '6', nome: 'Maichel Bueno',  cargo: 'Design / Coordenação',   salario: 6700,  faturavelPct: 1.00, backendPct: 0.00, setor: 'Criação',     socio: false, metaSalarial: 6700,  status: 'Ativo' },
-  { id: '7', nome: 'Marina Braune',  cargo: 'Redação',                salario: 4218,  faturavelPct: 1.00, backendPct: 0.00, setor: 'Criação',     socio: false, metaSalarial: 4218,  status: 'Ativo' },
-  { id: '8', nome: 'Ana (RH)',        cargo: 'RH',                     salario: 1500,  faturavelPct: 0.00, backendPct: 1.00, setor: 'Backend',     socio: false, metaSalarial: 1500,  status: 'Ativo' },
+  {
+    id: '1', nome: 'Jana Fonseca', cargo: 'Gestão / Atendimento', salario: 10000,
+    alocacoes: [{ setor: 'Atendimento', pct: 70 }, { setor: 'Comercial', pct: 30 }],
+    socio: true, metaSalarial: 12000, status: 'Ativo',
+  },
+  {
+    id: '2', nome: 'Felipe Mariot', cargo: 'Tráfego / Comercial', salario: 10000,
+    alocacoes: [{ setor: 'Mídia', pct: 25 }, { setor: 'Comercial', pct: 25 }, { setor: 'Criação', pct: 25 }, { setor: 'Gestão', pct: 25 }],
+    socio: true, metaSalarial: 15000, status: 'Ativo',
+  },
+  {
+    id: '3', nome: 'Pedro Lima', cargo: 'Financeiro / Comercial', salario: 10000,
+    alocacoes: [{ setor: 'Financeiro', pct: 70 }, { setor: 'Atendimento', pct: 30 }],
+    socio: true, metaSalarial: 15000, status: 'Ativo',
+  },
+  {
+    id: '4', nome: 'Matheus Valle', cargo: 'Tráfego pago', salario: 6059,
+    alocacoes: [{ setor: 'Tráfego', pct: 100 }],
+    socio: false, metaSalarial: 6059, status: 'Ativo',
+  },
+  {
+    id: '5', nome: 'Rebeca Mileski', cargo: 'Atendimento', salario: 8322,
+    alocacoes: [{ setor: 'Atendimento', pct: 100 }],
+    socio: false, metaSalarial: 8322, status: 'Ativo',
+  },
+  {
+    id: '6', nome: 'Maichel Bueno', cargo: 'Design / Coordenação', salario: 6700,
+    alocacoes: [{ setor: 'Criação', pct: 100 }],
+    socio: false, metaSalarial: 6700, status: 'Ativo',
+  },
+  {
+    id: '7', nome: 'Marina Braune', cargo: 'Redação', salario: 4218,
+    alocacoes: [{ setor: 'Redação', pct: 100 }],
+    socio: false, metaSalarial: 4218, status: 'Ativo',
+  },
+  {
+    id: '8', nome: 'Ana (RH)', cargo: 'RH', salario: 1500,
+    alocacoes: [{ setor: 'RH', pct: 100 }],
+    socio: false, metaSalarial: 1500, status: 'Ativo',
+  },
 ]
 
 const fixosIniciais = [

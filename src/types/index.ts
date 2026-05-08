@@ -21,14 +21,18 @@ export interface ColaboradorSheet {
   cargaHorariaMes: number;
 }
 
+export interface Alocacao {
+  setor: string;
+  pct: number; // 0–100
+}
+
 export interface EquipeMembro {
   id: string;
   nome: string;
   cargo: string;
   salario: number;
-  faturavelPct: number;
-  backendPct: number;
-  setor: 'Tráfego' | 'Atendimento' | 'Criação' | 'Backend';
+  /** Distribuição por setor: pct soma 100. Setores backend: Financeiro, Comercial, RH. */
+  alocacoes: Alocacao[];
   socio: boolean;
   metaSalarial: number;
   status: 'Ativo' | 'Inativo';

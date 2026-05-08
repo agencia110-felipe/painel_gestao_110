@@ -46,6 +46,21 @@ function resolveDataCompetencia(t: ProcfyTransaction): string {
   )
 }
 
+// Resolve a data para mesAno usando due_date como prioridade.
+// Se a data resultante for futura (> mês atual), usa o mês atual para evitar
+// que parcelas de vencimento lançado antecipadamente apareçam em meses errados.
+function resolveParaMesAno(t: ProcfyTransaction): string {
+  const now = new Date()
+  const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const raw =
+    t.due_date?.slice(0, 10) ||
+    t.competency_date?.slice(0, 10) ||
+    t.date?.slice(0, 10) ||
+    `${mesAtual}-01`
+  const yearMonth = raw.slice(0, 7)
+  return yearMonth > mesAtual ? `${mesAtual}-01` : raw
+}
+
 // Categorias que devem ser tratadas como CUSTO FIXO mesmo que o Procfy
 // as classifique como variable_expense. Nomes em minúsculo para comparação case-insensitive.
 const CATEGORIAS_FIXAS = new Set([
@@ -72,6 +87,7 @@ const TIPOS_FIXO = new Set([
 const TIPOS_DESPESA = new Set([
   'variable_expense',
   'fixed_expense',
+  'payroll',
   'despesa_fixa',
   'custo_fixo',
   'despesa_variavel',
@@ -351,13 +367,29 @@ router.post('/sync', async (_req, res) => {
       observacao: `Procfy · ${getCategoryName(t) || resolveDataCompetencia(t) || '—'}`,
     }))
 
-    const variaveis = variableRaw.map(t => ({
-      id: `procfy-${t.id}`,
-      mesAno: isoToPtBrMes(resolveDataCompetencia(t)),
-      descricao: t.name || t.description || 'Sem descrição',
-      valor: Math.abs(t.amount_cents) / 100,
-      categoria: getCategoryName(t) || 'Despesas variáveis',
-    }))
+    // Deduplicação: agrupa por (nome + amount_cents + mesAno), somando valores.
+    // Evita que parcelas ou lançamentos duplicados apareçam em dobro.
+    const variaveisMap = new Map<string, {
+      id: string; mesAno: string; descricao: string; valor: number; categoria: string
+    }>()
+    for (const t of variableRaw) {
+      const mesAno    = isoToPtBrMes(resolveParaMesAno(t))
+      const descricao = t.name || t.description || 'Sem descrição'
+      const categoria = getCategoryName(t) || 'Despesas variáveis'
+      const chave     = `${descricao.toLowerCase()}|${Math.abs(t.amount_cents)}|${mesAno}`
+      if (variaveisMap.has(chave)) {
+        variaveisMap.get(chave)!.valor += Math.abs(t.amount_cents) / 100
+      } else {
+        variaveisMap.set(chave, {
+          id: `procfy-${t.id}`,
+          mesAno,
+          descricao,
+          valor: Math.abs(t.amount_cents) / 100,
+          categoria,
+        })
+      }
+    }
+    const variaveis = Array.from(variaveisMap.values())
 
     res.json({
       fixos,

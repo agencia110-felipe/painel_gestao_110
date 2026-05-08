@@ -149,6 +149,114 @@ router.get('/raw', async (_req, res) => {
   }
 })
 
+// ─── GET /diagnostico ────────────────────────────────────────────────────────
+// Percorre TODAS as páginas do Procfy e retorna:
+//   - valores únicos de transaction_type e category encontrados
+//   - contagem de transações por tipo e por categoria
+//   - 3 exemplos de transação para cada combinação tipo+categoria
+// Não salva nada. Serve para descobrir como as despesas fixas estão classificadas.
+
+router.get('/diagnostico', async (_req, res) => {
+  const apiKey = process.env.PROCFY_API_KEY
+  const baseUrl = process.env.PROCFY_BASE_URL || 'https://api.procfy.io'
+
+  if (!apiKey) {
+    res.status(503).json({ error: 'PROCFY_API_KEY não configurada.' })
+    return
+  }
+
+  try {
+    // Busca todas as páginas
+    const all: ProcfyTransaction[] = []
+    const { data: first, totalPages } = await fetchPage(apiKey, baseUrl, 1)
+    all.push(...first)
+    for (let p = 2; p <= totalPages; p++) {
+      const { data } = await fetchPage(apiKey, baseUrl, p)
+      all.push(...data)
+    }
+
+    // Contagem por transaction_type
+    const porTipo: Record<string, number> = {}
+    for (const t of all) {
+      const tipo = t.transaction_type ?? '(nulo)'
+      porTipo[tipo] = (porTipo[tipo] ?? 0) + 1
+    }
+
+    // Contagem por category — o Procfy pode retornar category como objeto ou string
+    const porCategoria: Record<string, number> = {}
+    for (const t of all) {
+      const raw = t.category
+      let nome: string
+      if (!raw) {
+        nome = '(sem categoria)'
+      } else if (typeof raw === 'string') {
+        nome = raw
+      } else if (typeof raw === 'object' && raw !== null) {
+        const obj = raw as Record<string, unknown>
+        nome = String(obj.name ?? obj.title ?? obj.id ?? JSON.stringify(raw))
+      } else {
+        nome = String(raw)
+      }
+      porCategoria[nome] = (porCategoria[nome] ?? 0) + 1
+    }
+
+    // Contagem por combinação tipo+categoria e exemplos de transações
+    const porTipoCategoria: Record<string, {
+      count: number
+      exemplos: Array<{ id: string; name: string; amount_cents: number; competency_date: unknown; date: unknown; due_date: unknown }>
+    }> = {}
+
+    for (const t of all) {
+      const tipo = t.transaction_type ?? '(nulo)'
+      const raw = t.category
+      let cat: string
+      if (!raw) {
+        cat = '(sem categoria)'
+      } else if (typeof raw === 'string') {
+        cat = raw
+      } else if (typeof raw === 'object' && raw !== null) {
+        const obj = raw as Record<string, unknown>
+        cat = String(obj.name ?? obj.title ?? obj.id ?? '?')
+      } else {
+        cat = String(raw)
+      }
+
+      const chave = `${tipo} | ${cat}`
+      if (!porTipoCategoria[chave]) {
+        porTipoCategoria[chave] = { count: 0, exemplos: [] }
+      }
+      porTipoCategoria[chave].count++
+      if (porTipoCategoria[chave].exemplos.length < 3) {
+        porTipoCategoria[chave].exemplos.push({
+          id: t.id,
+          name: t.name || t.description || '?',
+          amount_cents: t.amount_cents,
+          competency_date: t.competency_date,
+          date: t.date,
+          due_date: t.due_date,
+        })
+      }
+    }
+
+    // Campos presentes na primeira transação (para saber o schema real)
+    const camposDisponiveis = all[0] ? Object.keys(all[0]).sort() : []
+
+    res.json({
+      totalTransacoes: all.length,
+      totalPaginas: totalPages,
+      camposDisponiveis,
+      porTransactionType: porTipo,
+      porCategoria,
+      porTipoECategoria: porTipoCategoria,
+    })
+  } catch (err) {
+    console.error('[Procfy] Erro no diagnóstico:', err)
+    res.status(502).json({
+      error: err instanceof Error ? err.message : 'Erro ao buscar dados do Procfy',
+    })
+  }
+})
+
 // ─── POST /sync ───────────────────────────────────────────────────────────────
 // Busca todas as transações do Procfy, filtra despesas fixas e variáveis,
 // normaliza para os tipos internos e retorna pronto para o store.

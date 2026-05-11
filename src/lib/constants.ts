@@ -93,6 +93,22 @@ export const SETOR_COLORS: Record<string, string> = {
   'Backend':      '#888888',
 }
 
+// Maps Sheets "Área" column values to system sector names
+export const AREA_PARA_SETOR: Record<string, string> = {
+  'Atendimento':   'Atendimento',
+  'Gestão':        'Gestão',
+  'Redação':       'Redação',
+  'Revisão':       'Revisão',
+  'Criação':       'Criação',
+  'Inbound':       'Inbound',
+  'Monitoramento': 'Monitoramento',
+  'Mídia':         'Mídia',
+  'Tráfego':       'Tráfego',
+  'Financeiro':    'Financeiro',
+  'Comercial':     'Comercial',
+  'RH':            'RH',
+}
+
 export const CLUSTER_COLORS: Record<string, string> = {
   'Júpiter': '#EA580C',
   'Saturno': '#1A3A5C',

@@ -10,9 +10,11 @@ import { DataTable, type Column } from '@/components/shared/DataTable'
 import { ChartCard } from '@/components/charts/ChartCard'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useSheetsStore } from '@/store/useSheetsStore'
+import { useCustosStore } from '@/store/useCustosStore'
+import { useConfigStore } from '@/store/useConfigStore'
 import { calcColaboradoresAnalise } from '@/lib/calculations'
 import { sortMesAno } from '@/lib/aggregation'
-import { formatPercent, formatHours, formatNumber, formatCurrency } from '@/lib/formatters'
+import { formatPercent, formatHours, formatNumber } from '@/lib/formatters'
 import { SETOR_COLORS, CHART_COLORS } from '@/lib/constants'
 import type { ColaboradorAnalise, ColaboradorSheet } from '@/types'
 import { Users, Clock, TrendingUp, AlertTriangle, Star, Activity } from 'lucide-react'
@@ -20,6 +22,8 @@ import { Users, Clock, TrendingUp, AlertTriangle, Star, Activity } from 'lucide-
 export function Colaboradores() {
   const { colaboradoresFiltrados, mesesNoFiltro, labelPeriodo } = useFilteredSheets()
   const { colaboradores } = useSheetsStore()
+  const { equipe } = useCustosStore()
+  const { params } = useConfigStore()
 
   const [areaFiltro, setAreaFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
@@ -60,12 +64,9 @@ export function Colaboradores() {
           colaborador: c.colaborador,
           area: c.area,
           tempoTrabalhado: 0,
-          tempoArredondado: 0,
-          custoEfetivoOp: 0,
           totalJobs: 0,
           percentualEntregas: 0,
-          cargaHoraria80pct: c.cargaHoraria80pct,
-          cargaHorariaMes: c.cargaHorariaMes,
+          semDados: true,
         })
       }
     }
@@ -73,8 +74,8 @@ export function Colaboradores() {
   }, [colaboradores, colaboradoresFiltrados, mesesNoFiltro])
 
   const analise = useMemo(
-    () => calcColaboradoresAnalise(todosColaboradoresMerged),
-    [todosColaboradoresMerged]
+    () => calcColaboradoresAnalise(todosColaboradoresMerged, equipe, params.horasMes),
+    [todosColaboradoresMerged, equipe, params.horasMes]
   )
 
   const areasDisponiveis = useMemo(
@@ -252,12 +253,6 @@ export function Colaboradores() {
       header: 'Jobs/h',
       align: 'right',
       render: row => row.produtividadePorHora > 0 ? row.produtividadePorHora.toFixed(2) : '—',
-    },
-    {
-      key: 'custoPortJob',
-      header: 'Custo/Job',
-      align: 'right',
-      render: row => row.custoPortJob > 0 ? formatCurrency(row.custoPortJob) : '—',
     },
     {
       key: 'status',

@@ -241,7 +241,7 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
   function handleAdd() {
     if (!novo.nome.trim()) return
     addMembro({ ...novo, alocacoes: novoAlocs })
-    setNovo({ nome: '', cargo: '', salario: 0, alocacoes: [{ setor: 'Tráfego', pct: 100 }], socio: false, metaSalarial: 0, status: 'Ativo' })
+    setNovo({ nome: '', cargo: '', salario: 0, alocacoes: [{ setor: 'Tráfego', pct: 100 }], socio: false, metaSalarial: 0, status: 'Ativo', cargaHorariaMes: undefined })
     setNovoAlocs([{ setor: 'Tráfego', pct: 100 }])
     setShowForm(false)
   }
@@ -271,6 +271,7 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
               <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Back.%</th>
               <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Sócio</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Meta Sal.</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Carga h/mês</th>
               <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Status</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -337,6 +338,19 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
                       onBlur={e => updateMembro(m.id, { metaSalarial: Number(e.target.value) })}
                     />
                   </td>
+                  <td className="px-4 py-2 text-right">
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="—"
+                      className="w-16 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                      defaultValue={m.cargaHorariaMes ?? ''}
+                      onBlur={e => {
+                        const v = e.target.value.trim()
+                        updateMembro(m.id, { cargaHorariaMes: v === '' ? undefined : Number(v) })
+                      }}
+                    />
+                  </td>
                   <td className="px-4 py-2 text-center">
                     <button
                       onClick={() => toggleStatus(m.id)}
@@ -400,6 +414,10 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
             <div>
               <label className="text-xs text-muted mb-1 block">Meta Salarial (R$)</label>
               <input type="number" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.metaSalarial} onChange={e => setNovo(p => ({ ...p, metaSalarial: Number(e.target.value) }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted mb-1 block">Carga h/mês (opcional)</label>
+              <input type="number" min={1} placeholder="Padrão global" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.cargaHorariaMes ?? ''} onChange={e => { const v = e.target.value.trim(); setNovo(p => ({ ...p, cargaHorariaMes: v === '' ? undefined : Number(v) })) }} />
             </div>
             <div className="flex items-end gap-4">
               <label className="flex items-center gap-2 text-sm text-neutral cursor-pointer">

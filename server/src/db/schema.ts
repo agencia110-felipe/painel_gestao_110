@@ -8,8 +8,9 @@ export const equipe = pgTable('equipe', {
   /** Array de {setor, pct} — soma deve ser 100. Setores backend: Financeiro, Comercial, RH. */
   alocacoes:    jsonb('alocacoes').$type<Array<{ setor: string; pct: number }>>().notNull().default([]),
   socio:        boolean('socio').notNull().default(false),
-  metaSalarial: real('meta_salarial').notNull(),
-  status:       text('status').notNull().default('Ativo'),
+  metaSalarial:    real('meta_salarial').notNull(),
+  status:          text('status').notNull().default('Ativo'),
+  cargaHorariaMes: real('carga_horaria_mes'),
 })
 
 export const custosFixos = pgTable('custos_fixos', {

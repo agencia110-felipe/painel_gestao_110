@@ -26,7 +26,7 @@ export function labelRange(inicio: string, fim: string): string {
   return `${inicio} – ${fim}`
 }
 
-// Agrega clientes: soma horas, custos e receita por nome de cliente dentro de um conjunto de meses
+// Agrega clientes: soma horas e receita por nome de cliente dentro de um conjunto de meses
 export function agregarClientes(
   clientes: ClienteSheet[],
   meses: string[]
@@ -42,48 +42,46 @@ export function agregarClientes(
     } else {
       const agg = mapa.get(key)!
       agg.tempoTrabalhado += c.tempoTrabalhado
-      agg.custoEfetivoOp += c.custoEfetivoOp
       agg.entradaContratual += c.entradaContratual
+      if (!c.semReceita) agg.semReceita = false
     }
   }
 
-  // Recalcula pct após agregação
   return Array.from(mapa.values()).map(c => ({
     ...c,
     mesAno: meses.length === 1 ? meses[0] : `${meses[0]}–${meses[meses.length - 1]}`,
-    custoOperacionalPct: c.entradaContratual > 0 ? c.custoEfetivoOp / c.entradaContratual : 0,
   }))
 }
 
-// Agrega colaboradores: soma horas e custos, faz média de % entregas
+// Agrega colaboradores: soma horas e jobs, faz média de % entregas
 export function agregarColaboradores(
   colaboradores: ColaboradorSheet[],
   meses: string[]
 ): ColaboradorSheet[] {
   const mesSet = new Set(meses)
   const filtrados = colaboradores.filter(c => mesSet.has(c.mesAno))
-  const mapa = new Map<string, ColaboradorSheet & { _entregasCount: number }>()
+  const mapa = new Map<string, ColaboradorSheet & { _entregasCount: number; _comDados: number }>()
 
   for (const c of filtrados) {
     const key = c.colaborador
     if (!mapa.has(key)) {
-      mapa.set(key, { ...c, _entregasCount: 1 })
+      mapa.set(key, { ...c, _entregasCount: 1, _comDados: c.semDados ? 0 : 1 })
     } else {
       const agg = mapa.get(key)!
       agg.tempoTrabalhado += c.tempoTrabalhado
-      agg.tempoArredondado += c.tempoArredondado
-      agg.custoEfetivoOp += c.custoEfetivoOp
       agg.totalJobs += c.totalJobs
-      agg.percentualEntregas += c.percentualEntregas
+      if (!c.semDados) {
+        agg.percentualEntregas += c.percentualEntregas
+        agg._comDados += 1
+        agg.semDados = false
+      }
       agg._entregasCount += 1
     }
   }
 
-  return Array.from(mapa.values()).map(({ _entregasCount, ...c }) => ({
+  return Array.from(mapa.values()).map(({ _entregasCount, _comDados, ...c }) => ({
     ...c,
     mesAno: meses.length === 1 ? meses[0] : `${meses[0]}–${meses[meses.length - 1]}`,
-    percentualEntregas: c.percentualEntregas / _entregasCount,
-    cargaHorariaMes: c.cargaHorariaMes * meses.length,
-    cargaHoraria80pct: c.cargaHoraria80pct * meses.length,
+    percentualEntregas: _comDados > 0 ? c.percentualEntregas / _comDados : 0,
   }))
 }

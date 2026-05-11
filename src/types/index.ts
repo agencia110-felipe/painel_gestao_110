@@ -3,9 +3,8 @@ export interface ClienteSheet {
   cluster: string;
   cliente: string;
   tempoTrabalhado: number;
-  custoEfetivoOp: number;
   entradaContratual: number;
-  custoOperacionalPct: number;
+  semReceita: boolean;
 }
 
 export interface ColaboradorSheet {
@@ -13,12 +12,9 @@ export interface ColaboradorSheet {
   colaborador: string;
   area: string;
   tempoTrabalhado: number;
-  tempoArredondado: number;
-  custoEfetivoOp: number;
   totalJobs: number;
   percentualEntregas: number;
-  cargaHoraria80pct: number;
-  cargaHorariaMes: number;
+  semDados: boolean;
 }
 
 export interface Alocacao {
@@ -36,6 +32,7 @@ export interface EquipeMembro {
   socio: boolean;
   metaSalarial: number;
   status: 'Ativo' | 'Inativo';
+  cargaHorariaMes?: number;
 }
 
 export interface CustoFixo {
@@ -85,7 +82,6 @@ export interface ClienteAnalise {
   custoRateado: number;
   lucroReal: number;
   margemReal: number;
-  margemContribuicao: number;  // (receita - custoEfetivoOp) / receita
   breakEven: number;           // receita mínima para lucro zero = custoRateado
   concentracao: number;        // receita(cliente) / receitaTotal
   receitaPorHora: number;
@@ -101,10 +97,8 @@ export interface ColaboradorAnalise {
   percentualOcupacao: number;
   percentualEntregas: number;
   totalJobs: number;
-  custoEfetivo: number;
   eficiencia: number;
   produtividadePorHora: number;  // totalJobs / horasTrabalhadas
-  custoPortJob: number;           // custoEfetivo / totalJobs
   status: 'Alta performance' | 'Disponível' | 'Regular' | 'Sobrecarregado' | 'Atenção' | 'Crítico';
 }
 

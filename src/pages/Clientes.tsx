@@ -54,9 +54,8 @@ export function Clientes() {
           cluster: c.cluster,
           cliente: c.cliente,
           tempoTrabalhado: 0,
-          custoEfetivoOp: 0,
           entradaContratual: 0,
-          custoOperacionalPct: 0,
+          semReceita: true,
         }
       )
     }
@@ -338,13 +337,6 @@ export function Clientes() {
             const gap25 = min25 - r.receita
             return (
               <div className="flex flex-wrap gap-6 text-sm">
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Margem de Contribuição</span>
-                  <p className={`font-semibold mt-0.5 ${r.margemContribuicao >= 0.30 ? 'text-success' : r.margemContribuicao >= 0.10 ? 'text-warning' : 'text-danger'}`}>
-                    {formatPercent(r.margemContribuicao)}
-                  </p>
-                  <p className="text-xs text-muted mt-0.5">(Receita − Custo Direto) / Receita</p>
-                </div>
                 <div>
                   <span className="text-muted text-xs uppercase tracking-wide">Break-even</span>
                   <p className="font-semibold text-neutral mt-0.5">{formatCurrency(r.breakEven)}</p>

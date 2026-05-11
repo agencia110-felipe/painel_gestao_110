@@ -93,7 +93,10 @@ export function calcHorasFaturaveisTotal(
   // from sheets have salary=0 and would inflate the hour count if included.
   return equipe
     .filter(m => m.status === 'Ativo' && m.salario > 0)
-    .reduce((s, m) => s + horasMes * aproveitamentoPct * membroFaturavelPct(m), 0)
+    .reduce((s, m) => {
+      const carga = m.cargaHorariaMes ?? horasMes
+      return s + carga * aproveitamentoPct * membroFaturavelPct(m)
+    }, 0)
 }
 
 export function calcCustoPorHoraReal(custoTotal: number, horasFaturaveis: number): number {
@@ -167,22 +170,15 @@ export function calcClientesAnalise(
   custoTotal: number
 ): ClienteAnalise[] {
   const receitaTotal = clientes.reduce((s, c) => s + c.entradaContratual, 0)
-  const custoEfetivoTotal = clientes.reduce((s, c) => s + c.custoEfetivoOp, 0)
-  // Overhead = custo que não está alocado diretamente em nenhum cliente
-  const custoOverhead = Math.max(custoTotal - custoEfetivoTotal, 0)
   const totalHoras = clientes.reduce((s, c) => s + c.tempoTrabalhado, 0)
 
   return clientes.map(c => {
-    // Custo direto do cliente + parcela de overhead proporcional às horas
-    const overheadCliente = totalHoras > 0
-      ? custoOverhead * (c.tempoTrabalhado / totalHoras)
-      : custoOverhead / Math.max(clientes.length, 1)
-    const custoRateado = c.custoEfetivoOp + overheadCliente
+    // Pure overhead rateio by hours (no direct cost column available)
+    const custoRateado = totalHoras > 0
+      ? custoTotal * (c.tempoTrabalhado / totalHoras)
+      : custoTotal / Math.max(clientes.length, 1)
     const lucroReal = calcLucroRealCliente(c.entradaContratual, custoRateado)
     const margemReal = calcMargemRealCliente(lucroReal, c.entradaContratual)
-    const margemContribuicao = c.entradaContratual > 0
-      ? (c.entradaContratual - c.custoEfetivoOp) / c.entradaContratual
-      : 0
     return {
       nome: c.cliente,
       cluster: c.cluster,
@@ -191,7 +187,6 @@ export function calcClientesAnalise(
       custoRateado,
       lucroReal,
       margemReal,
-      margemContribuicao,
       breakEven: custoRateado,
       concentracao: receitaTotal > 0 ? c.entradaContratual / receitaTotal : 0,
       receitaPorHora: c.tempoTrabalhado > 0 ? c.entradaContratual / c.tempoTrabalhado : 0,
@@ -228,22 +223,25 @@ export function calcEficienciaColaborador(
 }
 
 export function calcColaboradoresAnalise(
-  colaboradores: ColaboradorSheet[]
+  colaboradores: ColaboradorSheet[],
+  equipe: EquipeMembro[],
+  horasMesGlobal: number
 ): ColaboradorAnalise[] {
+  const equipeMap = new Map(equipe.map(m => [m.nome.trim().toLowerCase(), m]))
   return colaboradores.map(c => {
-    const ocupacao = calcOcupacaoColaborador(c.tempoTrabalhado, c.cargaHorariaMes)
+    const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
+    const cargaEsperada = membro?.cargaHorariaMes ?? horasMesGlobal
+    const ocupacao = calcOcupacaoColaborador(c.tempoTrabalhado, cargaEsperada)
     return {
       nome: c.colaborador,
       area: c.area,
       horasTrabalhadas: c.tempoTrabalhado,
-      cargaEsperada: c.cargaHorariaMes,
+      cargaEsperada,
       percentualOcupacao: ocupacao,
       percentualEntregas: c.percentualEntregas,
       totalJobs: c.totalJobs,
-      custoEfetivo: c.custoEfetivoOp,
       eficiencia: calcEficienciaColaborador(c.percentualEntregas, ocupacao),
       produtividadePorHora: c.tempoTrabalhado > 0 ? c.totalJobs / c.tempoTrabalhado : 0,
-      custoPortJob: c.totalJobs > 0 ? c.custoEfetivoOp / c.totalJobs : 0,
       status: calcStatusColaborador(c.percentualEntregas, ocupacao),
     }
   })
@@ -266,7 +264,8 @@ export function calcCapacidadeSetor(
     .reduce((s, m) => {
       const aloc = m.alocacoes.find(a => a.setor === setor)
       if (!aloc || aloc.pct === 0) return s
-      return s + horasMes * aproveitamentoPct * (aloc.pct / 100)
+      const carga = m.cargaHorariaMes ?? horasMes
+      return s + carga * aproveitamentoPct * (aloc.pct / 100)
     }, 0)
 }
 
@@ -316,7 +315,8 @@ export function calcCustoHoraSetor(
 
   const horasGrupo = ativos.reduce((s, m) => {
     const pct = m.alocacoes.filter(a => setorSet.has(a.setor)).reduce((p, a) => p + a.pct, 0) / 100
-    return s + horasMes * aproveitamentoPct * pct
+    const carga = m.cargaHorariaMes ?? horasMes
+    return s + carga * aproveitamentoPct * pct
   }, 0)
 
   if (horasGrupo === 0) return 0

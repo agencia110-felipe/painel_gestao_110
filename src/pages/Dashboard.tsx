@@ -93,21 +93,29 @@ export function Dashboard() {
     [clientesFiltrados]
   )
 
+  const equipeMap = useMemo(
+    () => new Map(equipe.map(m => [m.nome.trim().toLowerCase(), m])),
+    [equipe]
+  )
+
   const ocupacaoMedia = useMemo(() => {
     if (colaboradoresFiltrados.length === 0) return 0
-    const total = colaboradoresFiltrados.reduce(
-      (s, c) => s + (c.cargaHorariaMes > 0 ? c.tempoTrabalhado / c.cargaHorariaMes : 0),
-      0
-    )
+    const total = colaboradoresFiltrados.reduce((s, c) => {
+      const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
+      const carga = membro?.cargaHorariaMes ?? params.horasMes
+      return s + (carga > 0 ? c.tempoTrabalhado / carga : 0)
+    }, 0)
     return total / colaboradoresFiltrados.length
-  }, [colaboradoresFiltrados])
+  }, [colaboradoresFiltrados, equipeMap, params.horasMes])
 
   const setorMaisSobrecarregado = useMemo(() => {
     const porArea: Record<string, { horas: number; carga: number }> = {}
     colaboradoresFiltrados.forEach(c => {
+      const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
+      const carga = membro?.cargaHorariaMes ?? params.horasMes
       if (!porArea[c.area]) porArea[c.area] = { horas: 0, carga: 0 }
       porArea[c.area].horas += c.tempoTrabalhado
-      porArea[c.area].carga += c.cargaHorariaMes
+      porArea[c.area].carga += carga
     })
     let maxArea = '-'
     let maxPct = 0

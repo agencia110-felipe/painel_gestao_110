@@ -239,7 +239,7 @@ export function Capacidade() {
               <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `${v}%`} domain={[0, 110]} />
               <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
-              <ReferenceLine y={85} stroke={CHART_COLORS.warning} strokeDasharray="4 4" label={{ value: 'Gatilho 85%', position: 'right', fontSize: 11, fill: CHART_COLORS.warning }} />
+              <ReferenceLine y={params.gatilhoContratacaoPct * 100} stroke={CHART_COLORS.warning} strokeDasharray="4 4" label={{ value: `Gatilho ${Math.round(params.gatilhoContratacaoPct * 100)}%`, position: 'right', fontSize: 11, fill: CHART_COLORS.warning }} />
               {setoresAtivos.map(setor => (
                 <Line key={setor} type="monotone" dataKey={setor} stroke={SETOR_COLORS[setor] || '#888'} strokeWidth={2} dot={{ r: 3 }} />
               ))}

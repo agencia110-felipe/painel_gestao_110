@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { EquipeMembro, CustoFixo, CustoVariavel } from '@/types'
+import type { EquipeMembro, CustoFixo, CustoVariavel, ColaboradorSheet } from '@/types'
 import { equipeApi, fixosApi, variaveisApi, procfyApi } from '@/lib/api'
 
 const PROCFY_CACHE_KEY = 'procfy_cache'
@@ -42,6 +42,7 @@ interface CustosStore {
   // Actions
   initialize: () => Promise<void>
   syncFromProcfy: () => Promise<void>
+  syncEquipeFromSheets: (cols: ColaboradorSheet[]) => Promise<void>
   addMembro: (m: Omit<EquipeMembro, 'id'>) => Promise<void>
   updateMembro: (id: string, m: Partial<EquipeMembro>) => Promise<void>
   removeMembro: (id: string) => Promise<void>
@@ -108,6 +109,50 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
         procfyError: err instanceof Error ? err.message : 'Erro desconhecido ao sincronizar',
         procfyLoading: false,
       })
+    }
+  },
+
+  // ── Sync equipe com planilha ───────────────────────────────────────────────
+  // Adiciona colaboradores novos (que existem na planilha mas não no store).
+  // Nunca remove nem sobrescreve membros existentes.
+
+  syncEquipeFromSheets: async (cols: ColaboradorSheet[]) => {
+    if (!get().initialized) return
+
+    const equipeAtual = get().equipe
+    const nomesExistentes = new Set(equipeAtual.map(m => m.nome.toLowerCase().trim()))
+
+    // Coleta colaboradores únicos (primeira ocorrência define a área)
+    const unicos = new Map<string, { nome: string; area: string }>()
+    for (const c of cols) {
+      const key = c.colaborador.toLowerCase().trim()
+      if (key && !unicos.has(key)) {
+        unicos.set(key, { nome: c.colaborador, area: c.area })
+      }
+    }
+
+    const novos: Array<Omit<EquipeMembro, 'id'>> = []
+    for (const { nome, area } of unicos.values()) {
+      if (nomesExistentes.has(nome.toLowerCase().trim())) continue
+      novos.push({
+        nome,
+        cargo: area,
+        salario: 0,
+        alocacoes: [{ setor: area, pct: 100 }],
+        socio: false,
+        metaSalarial: 0,
+        status: 'Ativo',
+      })
+    }
+
+    if (novos.length === 0) return
+
+    const criados = await Promise.all(
+      novos.map(m => equipeApi.create(m).catch(() => null))
+    )
+    const validos = criados.filter((m): m is EquipeMembro => m !== null)
+    if (validos.length > 0) {
+      set(s => ({ equipe: [...s.equipe, ...validos] }))
     }
   },
 

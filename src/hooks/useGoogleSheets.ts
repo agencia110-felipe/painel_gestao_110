@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
+import { useCustosStore } from '@/store/useCustosStore'
 import type { ClienteSheet, ColaboradorSheet } from '@/types'
 import { mockClientes, mockColaboradores } from '@/lib/mockData'
 import { parseCurrencyBR, parsePercentBR } from '@/lib/formatters'
@@ -45,6 +46,7 @@ function parseColRow(row: string[]): ColaboradorSheet | null {
 export function useGoogleSheets() {
   const { sheets } = useConfigStore()
   const { setData, setLoading, setError, setLastSync, useMockData } = useSheetsStore()
+  const syncEquipeFromSheets = useCustosStore(s => s.syncEquipeFromSheets)
 
   const fetchSheets = useCallback(async () => {
     if (!sheets.spreadsheetId || !sheets.apiKey) {
@@ -59,6 +61,7 @@ export function useGoogleSheets() {
         if (Date.now() - timestamp < CACHE_TTL) {
           setData(data.clientes, data.colaboradores)
           setLastSync(new Date(timestamp))
+          syncEquipeFromSheets(data.colaboradores)
           return
         }
       } catch {
@@ -93,6 +96,7 @@ export function useGoogleSheets() {
         .filter(Boolean) as ColaboradorSheet[]
 
       setData(clientes, colaboradores)
+      syncEquipeFromSheets(colaboradores)
       const now = new Date()
       setLastSync(now)
 
@@ -104,10 +108,11 @@ export function useGoogleSheets() {
       const msg = err instanceof Error ? err.message : 'Erro desconhecido'
       setError(msg)
       useMockData()
+      syncEquipeFromSheets(mockColaboradores)
     } finally {
       setLoading(false)
     }
-  }, [sheets.spreadsheetId, sheets.apiKey, setData, setLoading, setError, setLastSync, useMockData])
+  }, [sheets.spreadsheetId, sheets.apiKey, setData, setLoading, setError, setLastSync, useMockData, syncEquipeFromSheets])
 
   useEffect(() => {
     fetchSheets()

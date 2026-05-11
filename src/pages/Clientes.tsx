@@ -26,13 +26,14 @@ import { DollarSign, TrendingUp, Users, BarChart2 } from 'lucide-react'
 type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'horasMes'
 
 export function Clientes() {
-  const { clientesFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro } = useFilteredSheets()
+  const { clientesFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro, todosOsMeses } = useFilteredSheets()
   const { params } = useConfigStore()
   const { equipe } = useCustosStore()
   const { clientes } = useSheetsStore()
 
   const [clusterFiltro, setClusterFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
+  const [atividadeFiltro, setAtividadeFiltro] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
   const [sortField, setSortField] = useState<SortField>('receita')
 
   const horasFaturaveis = useMemo(
@@ -69,6 +70,20 @@ export function Clientes() {
     [todosClientesMerged, custoTotal]
   )
 
+  // Dois meses mais recentes da planilha para determinar atividade
+  const ultimos2Meses = useMemo(() => todosOsMeses.slice(-2), [todosOsMeses])
+
+  // Clientes ativos = têm receita ou horas em pelo menos um dos 2 últimos meses
+  const clientesAtivos = useMemo(() => {
+    const set = new Set<string>()
+    for (const c of clientes) {
+      if (ultimos2Meses.includes(c.mesAno) && (c.entradaContratual > 0 || c.tempoTrabalhado > 0)) {
+        set.add(c.cliente)
+      }
+    }
+    return set
+  }, [clientes, ultimos2Meses])
+
   const clustersDisponiveis = useMemo(
     () => [...new Set(analise.map(c => c.cluster))].sort(),
     [analise]
@@ -83,8 +98,10 @@ export function Clientes() {
     let lista = analise
     if (clusterFiltro) lista = lista.filter(c => c.cluster === clusterFiltro)
     if (statusFiltro) lista = lista.filter(c => c.status === statusFiltro)
+    if (atividadeFiltro === 'ativos')   lista = lista.filter(c => clientesAtivos.has(c.nome))
+    if (atividadeFiltro === 'inativos') lista = lista.filter(c => !clientesAtivos.has(c.nome))
     return [...lista].sort((a, b) => b[sortField] - a[sortField])
-  }, [analise, clusterFiltro, statusFiltro, sortField])
+  }, [analise, clusterFiltro, statusFiltro, atividadeFiltro, sortField, clientesAtivos])
 
   // KPIs summary
   const totalReceita = useMemo(() => dadosFiltrados.reduce((s, c) => s + c.receita, 0), [dadosFiltrados])
@@ -221,6 +238,16 @@ export function Clientes() {
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <select
+          value={atividadeFiltro}
+          onChange={e => setAtividadeFiltro(e.target.value as typeof atividadeFiltro)}
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-white text-neutral focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          <option value="ativos">Ativos</option>
+          <option value="inativos">Inativos</option>
+          <option value="todos">Todos</option>
+        </select>
+
+        <select
           value={clusterFiltro}
           onChange={e => setClusterFiltro(e.target.value)}
           className="text-sm border border-border rounded-lg px-3 py-2 bg-white text-neutral focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -253,9 +280,9 @@ export function Clientes() {
           <option value="horasMes">Ordenar por Horas</option>
         </select>
 
-        {(clusterFiltro || statusFiltro) && (
+        {(clusterFiltro || statusFiltro || atividadeFiltro !== 'ativos') && (
           <button
-            onClick={() => { setClusterFiltro(''); setStatusFiltro('') }}
+            onClick={() => { setClusterFiltro(''); setStatusFiltro(''); setAtividadeFiltro('ativos') }}
             className="text-xs text-muted hover:text-neutral underline"
           >
             Limpar filtros

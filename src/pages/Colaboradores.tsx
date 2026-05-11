@@ -11,6 +11,7 @@ import { ChartCard } from '@/components/charts/ChartCard'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { calcColaboradoresAnalise } from '@/lib/calculations'
+import { sortMesAno } from '@/lib/aggregation'
 import { formatPercent, formatHours, formatNumber } from '@/lib/formatters'
 import { SETOR_COLORS, CHART_COLORS } from '@/lib/constants'
 import type { ColaboradorAnalise, ColaboradorSheet } from '@/types'
@@ -22,6 +23,23 @@ export function Colaboradores() {
 
   const [areaFiltro, setAreaFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
+  const [atividadeFiltro, setAtividadeFiltro] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
+
+  // Dois meses mais recentes para determinar atividade do colaborador
+  const ultimos2Meses = useMemo(() => {
+    const meses = sortMesAno([...new Set(colaboradores.map(c => c.mesAno))])
+    return meses.slice(-2)
+  }, [colaboradores])
+
+  const colaboradoresAtivoSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const c of colaboradores) {
+      if (ultimos2Meses.includes(c.mesAno) && c.tempoTrabalhado > 0) {
+        set.add(c.colaborador)
+      }
+    }
+    return set
+  }, [colaboradores, ultimos2Meses])
 
   // Merge: todos os colaboradores únicos da planilha inteira.
   // Quem não tem dados no período selecionado aparece com zeros.
@@ -73,8 +91,10 @@ export function Colaboradores() {
     let lista = analise
     if (areaFiltro) lista = lista.filter(c => c.area === areaFiltro)
     if (statusFiltro) lista = lista.filter(c => c.status === statusFiltro)
+    if (atividadeFiltro === 'ativos')   lista = lista.filter(c => colaboradoresAtivoSet.has(c.nome))
+    if (atividadeFiltro === 'inativos') lista = lista.filter(c => !colaboradoresAtivoSet.has(c.nome))
     return lista
-  }, [analise, areaFiltro, statusFiltro])
+  }, [analise, areaFiltro, statusFiltro, atividadeFiltro, colaboradoresAtivoSet])
 
   // KPIs
   const totalAtivos = dadosFiltrados.length
@@ -274,6 +294,16 @@ export function Colaboradores() {
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <select
+          value={atividadeFiltro}
+          onChange={e => setAtividadeFiltro(e.target.value as typeof atividadeFiltro)}
+          className="text-sm border border-border rounded-lg px-3 py-2 bg-white text-neutral focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          <option value="ativos">Ativos</option>
+          <option value="inativos">Inativos</option>
+          <option value="todos">Todos</option>
+        </select>
+
+        <select
           value={areaFiltro}
           onChange={e => setAreaFiltro(e.target.value)}
           className="text-sm border border-border rounded-lg px-3 py-2 bg-white text-neutral focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -295,9 +325,9 @@ export function Colaboradores() {
           ))}
         </select>
 
-        {(areaFiltro || statusFiltro) && (
+        {(areaFiltro || statusFiltro || atividadeFiltro !== 'ativos') && (
           <button
-            onClick={() => { setAreaFiltro(''); setStatusFiltro('') }}
+            onClick={() => { setAreaFiltro(''); setStatusFiltro(''); setAtividadeFiltro('ativos') }}
             className="text-xs text-muted hover:text-neutral underline"
           >
             Limpar filtros

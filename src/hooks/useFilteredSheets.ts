@@ -41,15 +41,20 @@ export function useFilteredSheets() {
     [colaboradores, mesesNoFiltro]
   )
 
-  // Custos totais do período (equipe+fixos são recorrentes mensais; variáveis somadas por mês)
+  // Custos totais do período.
+  // Folha: mensal × nMeses.
+  // Fixos: somados por mês (fixos sem mesAno = recorrentes, contam em cada mês).
+  // Variáveis: somadas apenas nos meses do filtro.
   const custoTotal = useMemo(() => {
     const folha = calcTotalFolha(equipe)
-    const fixoTotal = calcTotalFixos(fixos)
+    const fixosPeriodo = mesesNoFiltro.length > 0
+      ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFixos(fixos, m), 0)
+      : calcTotalFixos(fixos)
     const variaveisPeriodo = mesesNoFiltro.reduce(
       (acc, m) => acc + calcTotalVariaveis(variaveis, m),
       0
     )
-    return (folha + fixoTotal) * nMeses + variaveisPeriodo
+    return folha * nMeses + fixosPeriodo + variaveisPeriodo
   }, [equipe, fixos, variaveis, mesesNoFiltro, nMeses])
 
   // Custo de um único mês (para cálculos por hora, por pacote, etc.)

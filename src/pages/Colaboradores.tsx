@@ -12,7 +12,7 @@ import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { calcColaboradoresAnalise } from '@/lib/calculations'
 import { sortMesAno } from '@/lib/aggregation'
-import { formatPercent, formatHours, formatNumber } from '@/lib/formatters'
+import { formatPercent, formatHours, formatNumber, formatCurrency } from '@/lib/formatters'
 import { SETOR_COLORS, CHART_COLORS } from '@/lib/constants'
 import type { ColaboradorAnalise, ColaboradorSheet } from '@/types'
 import { Users, Clock, TrendingUp, AlertTriangle, Star, Activity } from 'lucide-react'
@@ -246,6 +246,18 @@ export function Colaboradores() {
       header: 'Jobs',
       align: 'right',
       render: row => formatNumber(row.totalJobs),
+    },
+    {
+      key: 'produtividadePorHora',
+      header: 'Jobs/h',
+      align: 'right',
+      render: row => row.produtividadePorHora > 0 ? row.produtividadePorHora.toFixed(2) : '—',
+    },
+    {
+      key: 'custoPortJob',
+      header: 'Custo/Job',
+      align: 'right',
+      render: row => row.custoPortJob > 0 ? formatCurrency(row.custoPortJob) : '—',
     },
     {
       key: 'status',

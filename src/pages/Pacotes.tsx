@@ -9,6 +9,7 @@ import {
   calcCustoPorHoraReal,
   calcPrecoPorHoraMinimo,
   calcPrecoPorHoraRecomendado,
+  calcCustoHoraSetor,
   calcPacote,
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent } from '@/lib/formatters'
@@ -23,13 +24,21 @@ export function Pacotes() {
   const custoTotal = calcCustoTotalMensal(equipe, fixos, variaveis)
   const horasFat = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
   const custoH = calcCustoPorHoraReal(custoTotal, horasFat)
-  const precoHMin = calcPrecoPorHoraMinimo(custoH, params.margemDesejadaPct)
+
+  // Custo/hora por setor — cada pacote usa mix Tráfego + Social Media
+  const custoHTrafego = calcCustoHoraSetor(equipe, fixos, variaveis, ['Tráfego', 'Mídia'], params.horasMes, params.aproveitamentoPct)
+  const custoHSocial  = calcCustoHoraSetor(equipe, fixos, variaveis, ['Atendimento', 'Criação', 'Redação', 'Revisão'], params.horasMes, params.aproveitamentoPct)
+  // Média ponderada pelo mix configurado em Parâmetros
+  const custoHBlended = params.trafegoPctPacote * custoHTrafego + params.socialMediaPctPacote * custoHSocial
+  const custoHPacote  = custoHBlended > 0 ? custoHBlended : custoH
+
+  const precoHMin = calcPrecoPorHoraMinimo(custoHPacote, params.margemDesejadaPct)
   const precoHRec = calcPrecoPorHoraRecomendado(precoHMin, params.fatorComplexidadePct)
 
-  const calculados = pacotes.map(p => calcPacote(p, custoH, params.margemDesejadaPct, params.fatorComplexidadePct))
+  const calculados = pacotes.map(p => calcPacote(p, custoHPacote, params.margemDesejadaPct, params.fatorComplexidadePct))
 
-  // Simulador avulso
-  const simCusto = simHoras * custoH
+  // Simulador avulso — usa custo blended dos pacotes
+  const simCusto = simHoras * custoHPacote
   const simPrecoMin = simHoras * precoHMin
   const simPrecoRec = simHoras * precoHRec
   const simLucro = simPrecoRec - simCusto
@@ -50,10 +59,10 @@ export function Pacotes() {
 
       {/* Reference cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <MetricCard label="Custo/hora real" value={formatCurrency(custoH)} subtext="base de cálculo" />
+        <MetricCard label="Custo/hora (mix pacotes)" value={formatCurrency(custoHPacote)} subtext={`Tráfego ${formatCurrency(custoHTrafego)} · SM ${formatCurrency(custoHSocial)}`} />
         <MetricCard label="Preço/hora mínimo" value={formatCurrency(precoHMin)} subtext={`margem ${formatPercent(params.margemDesejadaPct)}`} variant="warning" />
         <MetricCard label="Preço/hora recomendado" value={formatCurrency(precoHRec)} subtext={`+${formatPercent(params.fatorComplexidadePct)} complexidade`} variant="success" />
-        <MetricCard label="Margem desejada" value={formatPercent(params.margemDesejadaPct)} variant="info" />
+        <MetricCard label="Custo/hora médio" value={formatCurrency(custoH)} subtext="toda a equipe" variant="info" />
       </div>
 
       {/* Parameters */}

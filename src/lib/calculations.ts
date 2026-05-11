@@ -164,10 +164,23 @@ export function calcClientesAnalise(
   clientes: ClienteSheet[],
   custoTotal: number
 ): ClienteAnalise[] {
+  const receitaTotal = clientes.reduce((s, c) => s + c.entradaContratual, 0)
+  const custoEfetivoTotal = clientes.reduce((s, c) => s + c.custoEfetivoOp, 0)
+  // Overhead = custo que não está alocado diretamente em nenhum cliente
+  const custoOverhead = Math.max(custoTotal - custoEfetivoTotal, 0)
+  const totalHoras = clientes.reduce((s, c) => s + c.tempoTrabalhado, 0)
+
   return clientes.map(c => {
-    const custoRateado = calcCustoRateadoCliente(c, clientes, custoTotal, 'horas')
+    // Custo direto do cliente + parcela de overhead proporcional às horas
+    const overheadCliente = totalHoras > 0
+      ? custoOverhead * (c.tempoTrabalhado / totalHoras)
+      : custoOverhead / Math.max(clientes.length, 1)
+    const custoRateado = c.custoEfetivoOp + overheadCliente
     const lucroReal = calcLucroRealCliente(c.entradaContratual, custoRateado)
     const margemReal = calcMargemRealCliente(lucroReal, c.entradaContratual)
+    const margemContribuicao = c.entradaContratual > 0
+      ? (c.entradaContratual - c.custoEfetivoOp) / c.entradaContratual
+      : 0
     return {
       nome: c.cliente,
       cluster: c.cluster,
@@ -176,6 +189,9 @@ export function calcClientesAnalise(
       custoRateado,
       lucroReal,
       margemReal,
+      margemContribuicao,
+      breakEven: custoRateado,
+      concentracao: receitaTotal > 0 ? c.entradaContratual / receitaTotal : 0,
       receitaPorHora: c.tempoTrabalhado > 0 ? c.entradaContratual / c.tempoTrabalhado : 0,
       custoPorHora: c.tempoTrabalhado > 0 ? custoRateado / c.tempoTrabalhado : 0,
       status: calcStatusCliente(margemReal),
@@ -196,7 +212,9 @@ export function calcStatusColaborador(
 ): ColaboradorAnalise['status'] {
   if (percentualEntregas >= 0.85 && ocupacao >= 0.80) return 'Alta performance'
   if (percentualEntregas < 0.40) return 'Crítico'
-  if (percentualEntregas < 0.60 || ocupacao < 0.50) return 'Atenção'
+  if (percentualEntregas < 0.60 || (ocupacao < 0.50 && percentualEntregas < 0.70)) return 'Atenção'
+  if (ocupacao > 1.10) return 'Sobrecarregado'
+  if (ocupacao < 0.50) return 'Disponível'
   return 'Regular'
 }
 
@@ -222,6 +240,8 @@ export function calcColaboradoresAnalise(
       totalJobs: c.totalJobs,
       custoEfetivo: c.custoEfetivoOp,
       eficiencia: calcEficienciaColaborador(c.percentualEntregas, ocupacao),
+      produtividadePorHora: c.tempoTrabalhado > 0 ? c.totalJobs / c.tempoTrabalhado : 0,
+      custoPortJob: c.totalJobs > 0 ? c.custoEfetivoOp / c.totalJobs : 0,
       status: calcStatusColaborador(c.percentualEntregas, ocupacao),
     }
   })
@@ -259,6 +279,46 @@ export function calcStatusSetor(
   if (pct >= gatilhoPct) return 'No gatilho'
   if (pct >= 0.75) return 'Atenção'
   return 'Livre'
+}
+
+// ─── Custo/hora por setor ────────────────────────────────────────────────────
+
+/**
+ * Calcula custo/hora ponderado para um conjunto de setores.
+ * Cada membro contribui proporcional ao seu salário × % alocado no setor.
+ * O overhead (fixos + backend) é rateado pelo peso salarial do grupo.
+ */
+export function calcCustoHoraSetor(
+  equipe: EquipeMembro[],
+  fixos: CustoFixo[],
+  variaveis: CustoVariavel[],
+  setores: string[],
+  horasMes: number,
+  aproveitamentoPct: number,
+  mesAno?: string
+): number {
+  const ativos = equipe.filter(m => m.status === 'Ativo')
+  const setorSet = new Set(setores)
+
+  // Salário alocado no grupo de setores
+  const salarioGrupo = ativos.reduce((s, m) => {
+    const pct = m.alocacoes.filter(a => setorSet.has(a.setor)).reduce((p, a) => p + a.pct, 0) / 100
+    return s + m.salario * pct
+  }, 0)
+
+  const salarioTotal = ativos.reduce((s, m) => s + m.salario, 0)
+  if (salarioTotal === 0 || salarioGrupo === 0) return 0
+
+  const custoTotalMes = calcCustoTotalMensal(equipe, fixos, variaveis, mesAno)
+  const custoGrupo = custoTotalMes * (salarioGrupo / salarioTotal)
+
+  const horasGrupo = ativos.reduce((s, m) => {
+    const pct = m.alocacoes.filter(a => setorSet.has(a.setor)).reduce((p, a) => p + a.pct, 0) / 100
+    return s + horasMes * aproveitamentoPct * pct
+  }, 0)
+
+  if (horasGrupo === 0) return 0
+  return custoGrupo / horasGrupo
 }
 
 // ─── Pacotes ──────────────────────────────────────────────────────────────────

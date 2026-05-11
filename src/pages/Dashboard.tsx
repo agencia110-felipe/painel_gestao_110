@@ -25,6 +25,7 @@ import {
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
 import { CHART_COLORS } from '@/lib/constants'
+import { sortMesAno } from '@/lib/aggregation'
 import {
   TrendingUp, Users, DollarSign, Clock, AlertTriangle, Target,
 } from 'lucide-react'
@@ -97,7 +98,7 @@ export function Dashboard() {
 
   // ── Chart: Receita vs Custo vs Lucro (all months) ─────────────────────────
   const mesesDisponiveis = useMemo(() => {
-    return [...new Set(clientes.map(c => c.mesAno))]
+    return sortMesAno([...new Set(clientes.map(c => c.mesAno))])
   }, [clientes])
 
   const chartReceitaCustoLucro = useMemo(() => {

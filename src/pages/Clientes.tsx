@@ -10,12 +10,10 @@ import { DataTable, type Column } from '@/components/shared/DataTable'
 import { ChartCard } from '@/components/charts/ChartCard'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useConfigStore } from '@/store/useConfigStore'
-import { useCustosStore } from '@/store/useCustosStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import {
   calcClientesAnalise,
   calcReceitaMinimaCliente,
-  calcHorasFaturaveisTotal,
   calcCustoPorHoraReal,
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
@@ -26,9 +24,8 @@ import { DollarSign, TrendingUp, Users, BarChart2 } from 'lucide-react'
 type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'horasMes'
 
 export function Clientes() {
-  const { clientesFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro, todosOsMeses } = useFilteredSheets()
+  const { clientesFiltrados, colaboradoresFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro, todosOsMeses } = useFilteredSheets()
   const { params } = useConfigStore()
-  const { equipe } = useCustosStore()
   const { clientes } = useSheetsStore()
 
   const [clusterFiltro, setClusterFiltro] = useState('')
@@ -36,9 +33,10 @@ export function Clientes() {
   const [atividadeFiltro, setAtividadeFiltro] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
   const [sortField, setSortField] = useState<SortField>('receita')
 
+  // Horas reais trabalhadas no período (soma de todos os colaboradores)
   const horasFaturaveis = useMemo(
-    () => calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct) * nMeses,
-    [equipe, params, nMeses]
+    () => colaboradoresFiltrados.reduce((s, c) => s + c.tempoTrabalhado, 0),
+    [colaboradoresFiltrados]
   )
 
   const custoPorHora = calcCustoPorHoraReal(custoTotal, horasFaturaveis)
@@ -220,6 +218,16 @@ export function Clientes() {
       render: row => formatCurrency(row.receitaPorHora),
     },
     {
+      key: 'concentracao',
+      header: 'Concentração',
+      align: 'right',
+      render: row => (
+        <span className={row.concentracao > 0.20 ? 'text-warning font-medium' : ''}>
+          {formatPercent(row.concentracao)}
+        </span>
+      ),
+    },
+    {
       key: 'status',
       header: 'Status',
       align: 'center',
@@ -330,6 +338,25 @@ export function Clientes() {
             const gap25 = min25 - r.receita
             return (
               <div className="flex flex-wrap gap-6 text-sm">
+                <div>
+                  <span className="text-muted text-xs uppercase tracking-wide">Margem de Contribuição</span>
+                  <p className={`font-semibold mt-0.5 ${r.margemContribuicao >= 0.30 ? 'text-success' : r.margemContribuicao >= 0.10 ? 'text-warning' : 'text-danger'}`}>
+                    {formatPercent(r.margemContribuicao)}
+                  </p>
+                  <p className="text-xs text-muted mt-0.5">(Receita − Custo Direto) / Receita</p>
+                </div>
+                <div>
+                  <span className="text-muted text-xs uppercase tracking-wide">Break-even</span>
+                  <p className="font-semibold text-neutral mt-0.5">{formatCurrency(r.breakEven)}</p>
+                  <p className="text-xs text-muted mt-0.5">Receita mínima para lucro zero</p>
+                </div>
+                <div>
+                  <span className="text-muted text-xs uppercase tracking-wide">Concentração</span>
+                  <p className={`font-semibold mt-0.5 ${r.concentracao > 0.20 ? 'text-warning' : 'text-neutral'}`}>
+                    {formatPercent(r.concentracao)}
+                  </p>
+                  <p className="text-xs text-muted mt-0.5">{r.concentracao > 0.20 ? 'Risco: &gt;20% da receita' : 'Dentro do limite'}</p>
+                </div>
                 <div>
                   <span className="text-muted text-xs uppercase tracking-wide">Receita mínima para 20%</span>
                   <p className="font-semibold text-neutral mt-0.5">{formatCurrency(min20)}</p>

@@ -84,6 +84,9 @@ export interface ClienteAnalise {
   custoRateado: number;
   lucroReal: number;
   margemReal: number;
+  margemContribuicao: number;  // (receita - custoEfetivoOp) / receita
+  breakEven: number;           // receita mínima para lucro zero = custoRateado
+  concentracao: number;        // receita(cliente) / receitaTotal
   receitaPorHora: number;
   custoPorHora: number;
   status: 'Saudável' | 'Atenção' | 'Deficitário' | 'Prejuízo';
@@ -99,7 +102,9 @@ export interface ColaboradorAnalise {
   totalJobs: number;
   custoEfetivo: number;
   eficiencia: number;
-  status: 'Alta performance' | 'Regular' | 'Atenção' | 'Crítico';
+  produtividadePorHora: number;  // totalJobs / horasTrabalhadas
+  custoPortJob: number;           // custoEfetivo / totalJobs
+  status: 'Alta performance' | 'Disponível' | 'Regular' | 'Sobrecarregado' | 'Atenção' | 'Crítico';
 }
 
 export interface SetorCapacidade {

@@ -6,6 +6,8 @@ import { MetricCard } from '@/components/shared/MetricCard'
 import { AlertBanner } from '@/components/shared/AlertBanner'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useConfigStore } from '@/store/useConfigStore'
+import { useSheetsStore } from '@/store/useSheetsStore'
+import { sortMesAno } from '@/lib/aggregation'
 import {
   calcTotalFolha,
   calcTotalFixos,
@@ -38,6 +40,8 @@ export function Custos() {
     addVariavel, updateVariavel, removeVariavel,
   } = useCustosStore()
   const { params } = useConfigStore()
+  const { clientes } = useSheetsStore()
+  const mesesDisponiveis = sortMesAno([...new Set(clientes.map(c => c.mesAno))])
 
   const totalFolha = calcTotalFolha(equipe)
   const horasFat = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)

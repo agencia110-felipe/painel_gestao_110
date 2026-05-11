@@ -143,7 +143,7 @@ export function Colaboradores() {
 
   // Chart: Horas por Área (todos os meses)
   const mesesDisponiveis = useMemo(
-    () => [...new Set(colaboradores.map(c => c.mesAno))],
+    () => sortMesAno([...new Set(colaboradores.map(c => c.mesAno))]),
     [colaboradores]
   )
 

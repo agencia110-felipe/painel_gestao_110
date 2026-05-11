@@ -80,8 +80,8 @@ export function Custos() {
       </div>
 
       {activeTab === 'equipe'    && <TabEquipe equipe={equipe} totalFolha={totalFolha} horasFat={horasFat} totalBackend={totalBackend} pctBackend={pctBackend} updateMembro={updateMembro} removeMembro={removeMembro} toggleStatus={toggleStatus} addMembro={addMembro} />}
-      {activeTab === 'fixos'     && <TabFixos fixos={fixos} addFixo={addFixo} updateFixo={updateFixo} removeFixo={removeFixo} />}
-      {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} />}
+      {activeTab === 'fixos'     && <TabFixos fixos={fixos} addFixo={addFixo} updateFixo={updateFixo} removeFixo={removeFixo} mesesDisponiveis={mesesDisponiveis} />}
+      {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
       {activeTab === 'resumo'    && <TabResumo equipe={equipe} fixos={fixos} variaveis={variaveis} params={params} />}
     </PageWrapper>
   )
@@ -478,17 +478,27 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
 
 // ─── Tab Fixos ─────────────────────────────────────────────────────────────────
 
-function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
+function TabFixos({ fixos, addFixo, updateFixo, removeFixo, mesesDisponiveis }: {
   fixos: CustoFixo[]
   addFixo: (f: Omit<CustoFixo, 'id'>) => void
   updateFixo: (id: string, f: Partial<CustoFixo>) => void
   removeFixo: (id: string) => void
+  mesesDisponiveis: string[]
 }) {
+  const defaultMes = mesesDisponiveis[mesesDisponiveis.length - 1] || ''
   const [showForm, setShowForm] = useState(false)
-  const [novo, setNovo] = useState<Omit<CustoFixo, 'id'>>({ descricao: '', valor: 0, tipo: 'Backend', observacao: '' })
+  const [mesFiltro, setMesFiltro] = useState(defaultMes)
+  const [novo, setNovo] = useState<Omit<CustoFixo, 'id'>>({
+    mesAno: defaultMes, descricao: '', valor: 0, tipo: 'Backend', observacao: '',
+  })
 
-  const totalBackend = fixos.filter(f => f.tipo === 'Backend').reduce((s, f) => s + f.valor, 0)
-  const totalOp      = fixos.filter(f => f.tipo === 'Operacional').reduce((s, f) => s + f.valor, 0)
+  // Fixos sem mesAno são recorrentes (legado): aparecem em qualquer filtro de mês
+  const filtradas = mesFiltro
+    ? fixos.filter(f => !f.mesAno || f.mesAno === mesFiltro)
+    : fixos
+
+  const totalBackend = filtradas.filter(f => f.tipo === 'Backend').reduce((s, f) => s + f.valor, 0)
+  const totalOp      = filtradas.filter(f => f.tipo === 'Operacional').reduce((s, f) => s + f.valor, 0)
   const totalGeral   = totalBackend + totalOp
 
   const pieData = [
@@ -497,14 +507,28 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
   ]
 
   function handleAdd() {
-    if (!novo.descricao.trim() || novo.valor <= 0) return
+    if (!novo.mesAno || !novo.descricao.trim() || novo.valor <= 0) return
     addFixo(novo)
-    setNovo({ descricao: '', valor: 0, tipo: 'Backend', observacao: '' })
+    setNovo({ mesAno: defaultMes, descricao: '', valor: 0, tipo: 'Backend', observacao: '' })
     setShowForm(false)
   }
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-muted">Filtrar mês:</label>
+          <select
+            className="border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white"
+            value={mesFiltro}
+            onChange={e => setMesFiltro(e.target.value)}
+          >
+            <option value="">Todos</option>
+            {mesesDisponiveis.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      </div>
+
       <div className="grid grid-cols-3 gap-4">
         <MetricCard label="Total Backend" value={formatCurrency(totalBackend)} variant="warning" />
         <MetricCard label="Total Operacional" value={formatCurrency(totalOp)} variant="info" />
@@ -516,6 +540,7 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
+                <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Mês</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Descrição</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Valor</th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Tipo</th>
@@ -524,15 +549,25 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
               </tr>
             </thead>
             <tbody>
-              {fixos.length === 0 && (
+              {filtradas.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted text-sm">
-                    Nenhum custo fixo cadastrado. Clique em "Adicionar" para incluir.
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted text-sm">
+                    Nenhum custo fixo{mesFiltro ? ` em ${mesFiltro}` : ''} cadastrado.
                   </td>
                 </tr>
               )}
-              {fixos.map(f => (
+              {filtradas.map(f => (
                 <tr key={f.id} className="border-b border-border last:border-0">
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <select
+                      className="text-xs border border-border rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-primary/30"
+                      value={f.mesAno || ''}
+                      onChange={e => updateFixo(f.id, { mesAno: e.target.value || undefined })}
+                    >
+                      <option value="">Recorrente</option>
+                      {mesesDisponiveis.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </td>
                   <td className="px-4 py-2">
                     <input
                       className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
@@ -616,12 +651,23 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
         <div className="bg-white rounded-xl border border-primary/30 p-5 space-y-4">
           <h3 className="font-medium text-neutral text-sm">Novo Custo Fixo</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-muted mb-1 block">Mês/Ano <span className="text-danger">*</span></label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={novo.mesAno || ''}
+                onChange={e => setNovo(p => ({ ...p, mesAno: e.target.value }))}
+              >
+                <option value="">Selecione…</option>
+                {mesesDisponiveis.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-muted mb-1 block">Descrição</label>
+              <label className="text-xs text-muted mb-1 block">Descrição <span className="text-danger">*</span></label>
               <input className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.descricao} onChange={e => setNovo(p => ({ ...p, descricao: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs text-muted mb-1 block">Valor (R$)</label>
+              <label className="text-xs text-muted mb-1 block">Valor (R$) <span className="text-danger">*</span></label>
               <input type="number" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.valor} onChange={e => setNovo(p => ({ ...p, valor: Number(e.target.value) }))} />
             </div>
             <div>
@@ -631,13 +677,13 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
                 <option value="Operacional">Operacional</option>
               </select>
             </div>
-            <div className="md:col-span-4">
+            <div className="md:col-span-3">
               <label className="text-xs text-muted mb-1 block">Observação (opcional)</label>
               <input className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.observacao || ''} onChange={e => setNovo(p => ({ ...p, observacao: e.target.value }))} />
             </div>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleAdd} disabled={!novo.descricao.trim() || novo.valor <= 0} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Salvar</button>
+            <button onClick={handleAdd} disabled={!novo.mesAno || !novo.descricao.trim() || novo.valor <= 0} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Salvar</button>
             <button onClick={() => setShowForm(false)} className="px-4 py-2 border border-border rounded-lg text-sm text-muted hover:text-neutral transition-colors">Cancelar</button>
           </div>
         </div>
@@ -648,16 +694,22 @@ function TabFixos({ fixos, addFixo, updateFixo, removeFixo }: {
 
 // ─── Tab Variáveis ─────────────────────────────────────────────────────────────
 
-function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel }: {
+function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel, mesesDisponiveis }: {
   variaveis: CustoVariavel[]
   addVariavel: (v: Omit<CustoVariavel, 'id'>) => void
   updateVariavel: (id: string, v: Partial<CustoVariavel>) => void
   removeVariavel: (id: string) => void
+  mesesDisponiveis: string[]
 }) {
-  const meses = [...new Set(variaveis.map(v => v.mesAno))].sort()
+  // Meses que já têm variáveis + todos da planilha, em ordem cronológica
+  const meses = sortMesAno([...new Set([
+    ...mesesDisponiveis,
+    ...variaveis.map(v => v.mesAno).filter(Boolean),
+  ])])
   const [mesFiltro, setMesFiltro] = useState(meses[meses.length - 1] || '')
   const [showForm, setShowForm] = useState(false)
-  const [novo, setNovo] = useState<Omit<CustoVariavel, 'id'>>({ mesAno: '', descricao: '', valor: 0, categoria: '' })
+  const defaultMes = meses[meses.length - 1] || ''
+  const [novo, setNovo] = useState<Omit<CustoVariavel, 'id'>>({ mesAno: defaultMes, descricao: '', valor: 0, categoria: '' })
 
   const filtradas = mesFiltro ? variaveis.filter(v => v.mesAno === mesFiltro) : variaveis
   const totalMes = filtradas.reduce((s, v) => s + v.valor, 0)
@@ -753,15 +805,22 @@ function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel }
           <h3 className="font-medium text-neutral text-sm">Nova Despesa Variável</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="text-xs text-muted mb-1 block">Mês/Ano</label>
-              <input className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.mesAno} onChange={e => setNovo(p => ({ ...p, mesAno: e.target.value }))} placeholder="Mai/2026" />
+              <label className="text-xs text-muted mb-1 block">Mês/Ano <span className="text-danger">*</span></label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={novo.mesAno}
+                onChange={e => setNovo(p => ({ ...p, mesAno: e.target.value }))}
+              >
+                <option value="">Selecione…</option>
+                {meses.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
             </div>
             <div className="md:col-span-2">
-              <label className="text-xs text-muted mb-1 block">Descrição</label>
+              <label className="text-xs text-muted mb-1 block">Descrição <span className="text-danger">*</span></label>
               <input className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.descricao} onChange={e => setNovo(p => ({ ...p, descricao: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs text-muted mb-1 block">Valor (R$)</label>
+              <label className="text-xs text-muted mb-1 block">Valor (R$) <span className="text-danger">*</span></label>
               <input type="number" className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" value={novo.valor} onChange={e => setNovo(p => ({ ...p, valor: Number(e.target.value) }))} />
             </div>
             <div className="md:col-span-4">
@@ -770,7 +829,7 @@ function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel }
             </div>
           </div>
           <div className="flex gap-3">
-            <button onClick={handleAdd} disabled={!novo.descricao.trim() || novo.valor <= 0} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Salvar</button>
+            <button onClick={handleAdd} disabled={!novo.mesAno || !novo.descricao.trim() || novo.valor <= 0} className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Salvar</button>
             <button onClick={() => setShowForm(false)} className="px-4 py-2 border border-border rounded-lg text-sm text-muted hover:text-neutral transition-colors">Cancelar</button>
           </div>
         </div>
@@ -787,7 +846,7 @@ function TabResumo({ equipe, fixos, variaveis, params }: {
   variaveis: CustoVariavel[]
   params: import('@/types').ConfigParams
 }) {
-  const meses = [...new Set(variaveis.map(v => v.mesAno))].sort()
+  const meses = sortMesAno([...new Set(variaveis.map(v => v.mesAno))])
   const ultimoMes = meses[meses.length - 1]
 
   const totalFolha = calcTotalFolha(equipe)

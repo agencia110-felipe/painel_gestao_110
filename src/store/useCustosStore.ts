@@ -59,23 +59,24 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
     const equipeAtual = get().equipe
     const nomesExistentes = new Set(equipeAtual.map(m => m.nome.toLowerCase().trim()))
 
-    // Coleta colaboradores únicos (primeira ocorrência define a área)
-    const unicos = new Map<string, { nome: string; area: string }>()
+    // Coleta colaboradores únicos da planilha
+    const unicos = new Map<string, string>() // chave normalizada → nome original
     for (const c of cols) {
       const key = c.colaborador.toLowerCase().trim()
       if (key && !unicos.has(key)) {
-        unicos.set(key, { nome: c.colaborador, area: c.area })
+        unicos.set(key, c.colaborador)
       }
     }
 
     const novos: Array<Omit<EquipeMembro, 'id'>> = []
-    for (const { nome, area } of unicos.values()) {
+    for (const nome of unicos.values()) {
       if (nomesExistentes.has(nome.toLowerCase().trim())) continue
+      // Alocações vazias — usuário deve configurar manualmente em Custos > Equipe
       novos.push({
         nome,
-        cargo: area,
+        cargo: '',
         salario: 0,
-        alocacoes: [{ setor: area, pct: 100 }],
+        alocacoes: [],
         socio: false,
         metaSalarial: 0,
         status: 'Ativo',

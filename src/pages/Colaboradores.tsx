@@ -62,7 +62,6 @@ export function Colaboradores() {
         resultado.push({
           mesAno: mesesNoFiltro[0] || 'n/a',
           colaborador: c.colaborador,
-          area: c.area,
           tempoTrabalhado: 0,
           totalJobs: 0,
           percentualEntregas: 0,
@@ -148,23 +147,35 @@ export function Colaboradores() {
     [colaboradores]
   )
 
+  // Setor primário (maior pct) de cada membro — usado para o chart de horas por área
+  const equipeAreaMap = useMemo(() => {
+    const map = new Map<string, string>()
+    equipe.forEach(m => {
+      const setor = m.alocacoes.length > 0
+        ? [...m.alocacoes].sort((a, b) => b.pct - a.pct)[0].setor
+        : (m.cargo || '')
+      if (setor) map.set(m.nome.trim().toLowerCase(), setor)
+    })
+    return map
+  }, [equipe])
+
   const areasUnicas = useMemo(
-    () => [...new Set(colaboradores.map(c => c.area))].sort(),
-    [colaboradores]
+    () => [...new Set([...equipeAreaMap.values()])].sort(),
+    [equipeAreaMap]
   )
 
   const chartHorasPorArea = useMemo(() => {
     return mesesDisponiveis.map(mes => {
       const row: Record<string, string | number> = { mes }
-      const colaboradoresMes = colaboradores.filter(c => c.mesAno === mes)
+      const colsMes = colaboradores.filter(c => c.mesAno === mes)
       areasUnicas.forEach(area => {
-        row[area] = colaboradoresMes
-          .filter(c => c.area === area)
+        row[area] = colsMes
+          .filter(c => equipeAreaMap.get(c.colaborador.trim().toLowerCase()) === area)
           .reduce((s, c) => s + c.tempoTrabalhado, 0)
       })
       return row
     })
-  }, [colaboradores, mesesDisponiveis, areasUnicas])
+  }, [colaboradores, mesesDisponiveis, areasUnicas, equipeAreaMap])
 
   // Table columns
   const columns: Column<ColaboradorAnalise>[] = [

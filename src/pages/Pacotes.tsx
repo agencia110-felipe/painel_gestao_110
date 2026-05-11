@@ -27,7 +27,13 @@ export function Pacotes() {
 
   // Custo/hora por setor — cada pacote usa mix Tráfego + Social Media
   const custoHTrafego = calcCustoHoraSetor(equipe, fixos, variaveis, ['Tráfego', 'Mídia'], params.horasMes, params.aproveitamentoPct)
-  const custoHSocial  = calcCustoHoraSetor(equipe, fixos, variaveis, ['Atendimento', 'Criação', 'Redação', 'Revisão'], params.horasMes, params.aproveitamentoPct)
+  // Social Media blended: ponderado pelos sub-percentuais configurados (Atendimento, Criação, Revisão)
+  const custoHSMAtend  = calcCustoHoraSetor(equipe, fixos, variaveis, ['Atendimento'], params.horasMes, params.aproveitamentoPct)
+  const custoHSMCriacao = calcCustoHoraSetor(equipe, fixos, variaveis, ['Criação', 'Redação', 'Inbound', 'Monitoramento'], params.horasMes, params.aproveitamentoPct)
+  const custoHSMRevisao = calcCustoHoraSetor(equipe, fixos, variaveis, ['Revisão'], params.horasMes, params.aproveitamentoPct)
+  const custoHSocial = params.smAtendimentoPct * custoHSMAtend
+    + params.smCriacaoPct * custoHSMCriacao
+    + params.smRevisaoPct * custoHSMRevisao
   // Média ponderada pelo mix configurado em Parâmetros
   const custoHBlended = params.trafegoPctPacote * custoHTrafego + params.socialMediaPctPacote * custoHSocial
   const custoHPacote  = custoHBlended > 0 ? custoHBlended : custoH

@@ -10,7 +10,6 @@ export interface ClienteSheet {
 export interface ColaboradorSheet {
   mesAno: string;
   colaborador: string;
-  area: string;
   tempoTrabalhado: number;
   totalJobs: number;
   percentualEntregas: number;

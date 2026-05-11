@@ -35,15 +35,24 @@ export function Capacidade() {
   const { colaboradores } = useSheetsStore()
   const [simHoras, setSimHoras] = useState(0)
 
-  // Horas reais consumidas por área, baseadas nos dados de colaboradores da planilha
+  const equipeMap = useMemo(
+    () => new Map(equipe.map(m => [m.nome.trim().toLowerCase(), m])),
+    [equipe]
+  )
+
+  // Horas reais por setor — distribui proporcionalmente pelas alocações de cada colaborador
   const horasPorArea = useMemo(() => {
     const map: Record<string, number> = {}
     colaboradoresFiltrados.forEach(c => {
-      if (BACKEND_SET.has(c.area)) return
-      map[c.area] = (map[c.area] || 0) + c.tempoTrabalhado
+      const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
+      if (!membro || membro.alocacoes.length === 0) return
+      for (const aloc of membro.alocacoes) {
+        if (BACKEND_SET.has(aloc.setor)) continue
+        map[aloc.setor] = (map[aloc.setor] || 0) + c.tempoTrabalhado * (aloc.pct / 100)
+      }
     })
     return map
-  }, [colaboradoresFiltrados])
+  }, [colaboradoresFiltrados, equipeMap])
 
   // Setores ativos = união das alocações da equipe + áreas com dados reais na planilha
   const setoresAtivos = useMemo(() => {
@@ -92,13 +101,18 @@ export function Capacidade() {
   const simReceita = simHoras * precoRec
   const pacoteSugerido = [...PACOTES_BASE].sort((a, b) => Math.abs(a.horas - simHoras) - Math.abs(b.horas - simHoras))[0]
 
-  // Histórico por mês: usa horas reais dos colaboradores agrupadas por área
+  // Histórico por mês: distribui horas pelas alocações de cada colaborador
   const meses = sortMesAno([...new Set(colaboradores.map(c => c.mesAno))])
   const historicoData = meses.map(mes => {
     const horasMes: Record<string, number> = {}
-    colaboradores
-      .filter(c => c.mesAno === mes && !BACKEND_SET.has(c.area))
-      .forEach(c => { horasMes[c.area] = (horasMes[c.area] || 0) + c.tempoTrabalhado })
+    colaboradores.filter(c => c.mesAno === mes).forEach(c => {
+      const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
+      if (!membro || membro.alocacoes.length === 0) return
+      for (const aloc of membro.alocacoes) {
+        if (BACKEND_SET.has(aloc.setor)) continue
+        horasMes[aloc.setor] = (horasMes[aloc.setor] || 0) + c.tempoTrabalhado * (aloc.pct / 100)
+      }
+    })
     const result: Record<string, number | string> = { mes }
     setoresAtivos.forEach(setor => {
       const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)

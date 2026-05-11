@@ -26,13 +26,18 @@ function parsePct(value: string): number {
 function parseClienteRow(row: string[]): ClienteSheet | null {
   // Cols: A=mesAno, B=cluster, C=cliente, D=tempo (HH:MM:SS), E=receita
   if (!row[0] || !row[2]) return null
-  const semReceita = !row[4] || row[4].trim() === ''
+  const rawReceita = row[4]
+  const semReceita = !rawReceita || rawReceita.trim() === ''
+  const entradaContratual = semReceita ? 0 : parseCurrencyBR(rawReceita)
+  if (!semReceita && entradaContratual === 0) {
+    console.warn('[Sheets] Receita zerada após parse — cliente:', row[2], '| raw:', rawReceita)
+  }
   return {
     mesAno: normalizeMesAno(row[0]) || row[0],
     cluster: row[1] || '',
     cliente: row[2] || '',
     tempoTrabalhado: parseHHMMSS(row[3] || ''),
-    entradaContratual: semReceita ? 0 : parseCurrencyBR(row[4]),
+    entradaContratual,
     semReceita,
   }
 }
@@ -62,16 +67,16 @@ function agruparClientesPorMes(rows: ClienteSheet[]): ClienteSheet[] {
 }
 
 function parseColaboradorRow(row: string[]): ColaboradorSheet | null {
-  // Cols: A=mesAno, B=colaborador, C=área, D=tempo (HH:MM:SS), E=totalJobs, F=% entregas
+  // Cols: A=mesAno, B=colaborador, C=tempo (HH:MM:SS), D=totalJobs, E=% entregas
+  // NOTE: coluna Área foi removida da planilha — setor configurado manualmente na plataforma
   if (!row[0] || !row[1]) return null
-  const semDados = !row[3] || row[3].trim() === ''
+  const semDados = !row[2] || row[2].trim() === ''
   return {
     mesAno: normalizeMesAno(row[0]) || row[0],
     colaborador: row[1] || '',
-    area: row[2] || '',
-    tempoTrabalhado: semDados ? 0 : parseHHMMSS(row[3]),
-    totalJobs: semDados ? 0 : parseNumBR(row[4] || ''),
-    percentualEntregas: semDados ? 0 : parsePct(row[5] || ''),
+    tempoTrabalhado: semDados ? 0 : parseHHMMSS(row[2]),
+    totalJobs: semDados ? 0 : parseNumBR(row[3] || ''),
+    percentualEntregas: semDados ? 0 : parsePct(row[4] || ''),
     semDados,
   }
 }
@@ -111,7 +116,7 @@ export function useGoogleSheets() {
 
       const [r1, r2] = await Promise.all([
         fetch(`${base}/Clientes!A:E${key}`),
-        fetch(`${base}/Colaboradores!A:F${key}`),
+        fetch(`${base}/Colaboradores!A:E${key}`),
       ])
 
       if (!r1.ok || !r2.ok) throw new Error('Erro ao buscar dados do Google Sheets')

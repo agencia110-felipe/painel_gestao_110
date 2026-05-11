@@ -19,6 +19,8 @@ const BACKEND_SET = new Set(['Financeiro', 'Comercial', 'RH'])
 // ─── Helpers de alocação ─────────────────────────────────────────────────────
 
 export function membroFaturavelPct(m: Pick<EquipeMembro, 'alocacoes'>): number {
+  // Sem alocações configuradas → assume 100% faturável (fallback seguro)
+  if (!m.alocacoes || m.alocacoes.length === 0) return 1
   return m.alocacoes
     .filter(a => !BACKEND_SET.has(a.setor))
     .reduce((s, a) => s + a.pct, 0) / 100
@@ -222,6 +224,12 @@ export function calcEficienciaColaborador(
   return percentualEntregas * ocupacao
 }
 
+// Retorna o setor principal do membro (maior % alocação), ou cargo como fallback
+function primarySetor(m: EquipeMembro): string {
+  if (!m.alocacoes || m.alocacoes.length === 0) return m.cargo || '—'
+  return [...m.alocacoes].sort((a, b) => b.pct - a.pct)[0].setor
+}
+
 export function calcColaboradoresAnalise(
   colaboradores: ColaboradorSheet[],
   equipe: EquipeMembro[],
@@ -232,9 +240,10 @@ export function calcColaboradoresAnalise(
     const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
     const cargaEsperada = membro?.cargaHorariaMes ?? horasMesGlobal
     const ocupacao = calcOcupacaoColaborador(c.tempoTrabalhado, cargaEsperada)
+    const area = membro ? primarySetor(membro) : '—'
     return {
       nome: c.colaborador,
-      area: c.area,
+      area,
       horasTrabalhadas: c.tempoTrabalhado,
       cargaEsperada,
       percentualOcupacao: ocupacao,
@@ -402,7 +411,8 @@ export function calcDRE(
   totalVariaveis: number,
   aliquotaImpostosPct: number,
 ): DREResult {
-  const impostos = receitaBruta * aliquotaImpostosPct
+  const aliquota = aliquotaImpostosPct ?? 0
+  const impostos = receitaBruta * aliquota
   const lucroBruto = receitaBruta - impostos
   const lucroOperacional = lucroBruto - totalVariaveis
   const resultadoLiquido = lucroOperacional - totalFixos - totalFolha

@@ -50,7 +50,7 @@ export function Dashboard() {
     [clientesFiltrados]
   )
 
-  const totalImpostos = receita * params.aliquotaImpostosPct
+  const totalImpostos = receita * (params.aliquotaImpostosPct ?? 0)
   const lucro = receita - custoTotal - totalImpostos
   const margemLiquida = receita > 0 ? lucro / receita : 0
 
@@ -112,10 +112,20 @@ export function Dashboard() {
     const porArea: Record<string, { horas: number; carga: number }> = {}
     colaboradoresFiltrados.forEach(c => {
       const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
-      const carga = membro?.cargaHorariaMes ?? params.horasMes
-      if (!porArea[c.area]) porArea[c.area] = { horas: 0, carga: 0 }
-      porArea[c.area].horas += c.tempoTrabalhado
-      porArea[c.area].carga += carga
+      if (!membro) return
+      const carga = membro.cargaHorariaMes ?? params.horasMes
+      for (const aloc of membro.alocacoes) {
+        const pctFrac = aloc.pct / 100
+        if (!porArea[aloc.setor]) porArea[aloc.setor] = { horas: 0, carga: 0 }
+        porArea[aloc.setor].horas += c.tempoTrabalhado * pctFrac
+        porArea[aloc.setor].carga += carga * pctFrac
+      }
+      if (membro.alocacoes.length === 0) {
+        // fallback: colaborador sem alocações conta como uma entidade genérica
+        if (!porArea['—']) porArea['—'] = { horas: 0, carga: 0 }
+        porArea['—'].horas += c.tempoTrabalhado
+        porArea['—'].carga += carga
+      }
     })
     let maxArea = '-'
     let maxPct = 0
@@ -140,7 +150,7 @@ export function Dashboard() {
       const clientesMes = clientes.filter(c => c.mesAno === mes)
       const receitaMes = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
       const custoMes = calcCustoTotalMensal(equipe, fixos, variaveis, mes)
-      const impostosMes = receitaMes * params.aliquotaImpostosPct
+      const impostosMes = receitaMes * (params.aliquotaImpostosPct ?? 0)
       return {
         mes,
         Receita: receitaMes,
@@ -200,7 +210,7 @@ export function Dashboard() {
       const clientesMes = clientes.filter(c => c.mesAno === mes)
       const receitaMes = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
       const custoMes = calcCustoTotalMensal(equipe, fixos, variaveis, mes)
-      const impostosMes = receitaMes * params.aliquotaImpostosPct
+      const impostosMes = receitaMes * (params.aliquotaImpostosPct ?? 0)
       const lucroMes = receitaMes - custoMes - impostosMes
       return {
         mes,

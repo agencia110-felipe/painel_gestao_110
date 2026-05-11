@@ -1,31 +1,6 @@
 import { create } from 'zustand'
 import type { EquipeMembro, CustoFixo, CustoVariavel, ColaboradorSheet } from '@/types'
-import { equipeApi, fixosApi, variaveisApi, procfyApi } from '@/lib/api'
-
-const PROCFY_CACHE_KEY = 'procfy_cache'
-
-interface ProcfyCache {
-  fixos: CustoFixo[]
-  variaveis: CustoVariavel[]
-  syncedAt: string
-}
-
-function loadProcfyCache(): ProcfyCache | null {
-  try {
-    const raw = localStorage.getItem(PROCFY_CACHE_KEY)
-    return raw ? (JSON.parse(raw) as ProcfyCache) : null
-  } catch {
-    return null
-  }
-}
-
-function saveProcfyCache(cache: ProcfyCache) {
-  try {
-    localStorage.setItem(PROCFY_CACHE_KEY, JSON.stringify(cache))
-  } catch {
-    // localStorage cheio — ignora silenciosamente
-  }
-}
+import { equipeApi, fixosApi, variaveisApi } from '@/lib/api'
 
 interface CustosStore {
   equipe: EquipeMembro[]
@@ -34,14 +9,8 @@ interface CustosStore {
   initialized: boolean
   loading: boolean
   error: string | null
-  // Procfy
-  hasProcfy: boolean
-  procfyLastSync: string | null
-  procfyLoading: boolean
-  procfyError: string | null
   // Actions
   initialize: () => Promise<void>
-  syncFromProcfy: () => Promise<void>
   syncEquipeFromSheets: (cols: ColaboradorSheet[]) => Promise<void>
   addMembro: (m: Omit<EquipeMembro, 'id'>) => Promise<void>
   updateMembro: (id: string, m: Partial<EquipeMembro>) => Promise<void>
@@ -62,10 +31,6 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
   initialized: false,
   loading: false,
   error: null,
-  hasProcfy: false,
-  procfyLastSync: null,
-  procfyLoading: false,
-  procfyError: null,
 
   initialize: async () => {
     if (get().initialized) return
@@ -76,39 +41,11 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
         fixosApi.list(),
         variaveisApi.list(),
       ])
-      // Sobrepõe com cache do Procfy se existir
-      const cache = loadProcfyCache()
-      if (cache) {
-        set({
-          equipe,
-          fixos: cache.fixos,
-          variaveis: cache.variaveis,
-          hasProcfy: true,
-          procfyLastSync: cache.syncedAt,
-          initialized: true,
-        })
-      } else {
-        set({ equipe, fixos, variaveis, initialized: true })
-      }
+      set({ equipe, fixos, variaveis, initialized: true })
     } catch (err) {
       set({ error: err instanceof Error ? err.message : 'Erro ao carregar dados' })
     } finally {
       set({ loading: false })
-    }
-  },
-
-  syncFromProcfy: async () => {
-    if (get().procfyLoading) return
-    set({ procfyLoading: true, procfyError: null })
-    try {
-      const { fixos, variaveis, syncedAt } = await procfyApi.sync()
-      saveProcfyCache({ fixos, variaveis, syncedAt })
-      set({ fixos, variaveis, hasProcfy: true, procfyLastSync: syncedAt, procfyLoading: false })
-    } catch (err) {
-      set({
-        procfyError: err instanceof Error ? err.message : 'Erro desconhecido ao sincronizar',
-        procfyLoading: false,
-      })
     }
   },
 

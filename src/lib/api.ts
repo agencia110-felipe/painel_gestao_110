@@ -1,18 +1,5 @@
 import type { EquipeMembro, CustoFixo, CustoVariavel } from '@/types'
 
-export interface ProcfySyncResult {
-  fixos: CustoFixo[]
-  variaveis: CustoVariavel[]
-  syncedAt: string
-}
-
-export interface ProcfyStatus {
-  configured: boolean
-  ok?: boolean
-  httpStatus?: number
-  error?: string
-}
-
 const BASE = '/api'
 
 function token(): string | null {
@@ -100,12 +87,3 @@ export const variaveisApi = {
     req<void>(`/variaveis/${id}`, { method: 'DELETE' }),
 }
 
-// ─── Procfy ───────────────────────────────────────────────────────────────────
-
-export const procfyApi = {
-  sync: () =>
-    req<ProcfySyncResult>('/procfy/sync', { method: 'POST' }),
-
-  status: () =>
-    req<ProcfyStatus>('/procfy/status'),
-}

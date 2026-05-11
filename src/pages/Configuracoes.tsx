@@ -1,50 +1,20 @@
 import { useState } from 'react'
-import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, Database } from 'lucide-react'
+import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2 } from 'lucide-react'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
-import { procfyApi, type ProcfyStatus } from '@/lib/api'
 import type { ConfigParams } from '@/types'
 
 export function Configuracoes() {
-  const { params, pacotes, sheets, procfyAutoSync, setParam, resetParams, updatePacote, setSheetsConfig, setProcfyAutoSync } = useConfigStore()
-  const { equipe, fixos, variaveis, addMembro, addFixo, addVariavel, removeMembro, removeFixo, removeVariavel, hasProcfy, procfyLastSync, procfyLoading, procfyError, syncFromProcfy } = useCustosStore()
+  const { params, pacotes, sheets, setParam, resetParams, updatePacote, setSheetsConfig } = useConfigStore()
+  const { equipe, fixos, variaveis, addMembro, addFixo, addVariavel, removeMembro, removeFixo, removeVariavel } = useCustosStore()
   const { clientes, lastSync, error } = useSheetsStore()
 
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [testMsg, setTestMsg] = useState('')
   const [showRaw, setShowRaw] = useState(false)
   const [clearConfirm, setClearConfirm] = useState(false)
-
-  // ── Procfy test ──
-  const [procfyTestStatus, setProcfyTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
-  const [procfyTestMsg, setProcfyTestMsg] = useState('')
-
-  async function handleTestProcfy() {
-    setProcfyTestStatus('loading')
-    setProcfyTestMsg('')
-    try {
-      const s: ProcfyStatus = await procfyApi.status()
-      if (!s.configured) {
-        setProcfyTestStatus('error')
-        setProcfyTestMsg('API Key não configurada no servidor (server/.env → PROCFY_API_KEY).')
-      } else if (s.ok) {
-        setProcfyTestStatus('ok')
-        setProcfyTestMsg('Conectado ao Procfy com sucesso.')
-      } else {
-        setProcfyTestStatus('error')
-        setProcfyTestMsg(s.error ?? `Procfy retornou HTTP ${s.httpStatus ?? '?'}.`)
-      }
-    } catch (e) {
-      setProcfyTestStatus('error')
-      setProcfyTestMsg(e instanceof Error ? e.message : 'Erro ao testar conexão.')
-    }
-  }
-
-  async function handleSyncProcfy() {
-    await syncFromProcfy()
-  }
 
   async function handleTestConnection() {
     if (!sheets.spreadsheetId || !sheets.apiKey) {
@@ -230,89 +200,7 @@ export function Configuracoes() {
           )}
         </section>
 
-        {/* ── Seção 2: Procfy ── */}
-        <section className="bg-white rounded-xl border border-border p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Database size={16} className="text-primary" />
-            <h2 className="font-semibold text-neutral">Integração Procfy</h2>
-          </div>
-
-          <div className="bg-bg-page rounded-lg px-4 py-3 mb-4 text-xs text-muted border border-border">
-            A API Key do Procfy fica em <code className="font-mono bg-neutral/10 px-1 rounded">server/.env → PROCFY_API_KEY</code> e não é exposta nesta tela por segurança. Após adicionar a chave, reinicie o servidor e clique em "Testar conexão".
-          </div>
-
-          {/* Status */}
-          <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
-            <div className="bg-bg-page rounded-lg px-4 py-3">
-              <p className="text-xs text-muted mb-0.5">Status</p>
-              <p className={`font-medium ${hasProcfy ? 'text-success' : 'text-muted'}`}>
-                {hasProcfy ? 'Sincronizado' : 'Não sincronizado'}
-              </p>
-            </div>
-            <div className="bg-bg-page rounded-lg px-4 py-3">
-              <p className="text-xs text-muted mb-0.5">Última sincronização</p>
-              <p className="font-medium text-neutral">
-                {procfyLastSync ? new Date(procfyLastSync).toLocaleString('pt-BR') : '—'}
-              </p>
-            </div>
-          </div>
-
-          {/* Auto-sync toggle */}
-          <div className="flex items-center gap-4 mb-4">
-            <label className="flex items-center gap-2 text-sm text-neutral cursor-pointer select-none">
-              <div
-                onClick={() => setProcfyAutoSync(!procfyAutoSync)}
-                className={`w-10 h-5 rounded-full transition-colors cursor-pointer ${procfyAutoSync ? 'bg-primary' : 'bg-neutral/20'}`}
-              >
-                <div className={`w-4 h-4 bg-white rounded-full mt-0.5 transition-transform shadow ${procfyAutoSync ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </div>
-              Sincronizar automaticamente ao abrir o painel
-            </label>
-          </div>
-
-          {/* Buttons */}
-          <div className="flex flex-wrap items-center gap-3 mb-3">
-            <button
-              onClick={handleTestProcfy}
-              disabled={procfyTestStatus === 'loading'}
-              className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm text-neutral hover:bg-bg-page transition-colors disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={procfyTestStatus === 'loading' ? 'animate-spin' : ''} />
-              {procfyTestStatus === 'loading' ? 'Testando...' : 'Testar conexão'}
-            </button>
-
-            <button
-              onClick={handleSyncProcfy}
-              disabled={procfyLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={procfyLoading ? 'animate-spin' : ''} />
-              {procfyLoading ? 'Sincronizando...' : 'Sincronizar agora'}
-            </button>
-          </div>
-
-          {/* Test result */}
-          {procfyTestStatus !== 'idle' && procfyTestStatus !== 'loading' && (
-            <div className={`flex items-center gap-2 text-sm px-4 py-2.5 rounded-lg border ${
-              procfyTestStatus === 'ok'
-                ? 'bg-success-bg border-success/30 text-success'
-                : 'bg-danger-bg border-danger/30 text-danger'
-            }`}>
-              {procfyTestStatus === 'ok' ? <CheckCircle size={14} /> : <XCircle size={14} />}
-              {procfyTestMsg}
-            </div>
-          )}
-
-          {/* Sync error */}
-          {procfyError && (
-            <div className="flex items-center gap-2 text-sm px-4 py-2.5 rounded-lg border bg-danger-bg border-danger/30 text-danger mt-2">
-              <XCircle size={14} />
-              {procfyError}
-            </div>
-          )}
-        </section>
-
-        {/* ── Seção 3: Parâmetros Operacionais ── */}
+        {/* ── Seção 2: Parâmetros Operacionais ── */}
         <section className="bg-white rounded-xl border border-border p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-neutral">Parâmetros Operacionais</h2>
@@ -341,7 +229,7 @@ export function Configuracoes() {
           </div>
         </section>
 
-        {/* ── Seção 4: Pacotes Base ── */}
+        {/* ── Seção 3: Pacotes Base ── */}
         <section className="bg-white rounded-xl border border-border p-5">
           <h2 className="font-semibold text-neutral mb-4">Pacotes Base</h2>
           <div className="overflow-x-auto">
@@ -386,7 +274,7 @@ export function Configuracoes() {
           </div>
         </section>
 
-        {/* ── Seção 5: Dados ── */}
+        {/* ── Seção 4: Dados ── */}
         <section className="bg-white rounded-xl border border-border p-5">
           <h2 className="font-semibold text-neutral mb-4">Gerenciamento de Dados</h2>
           <div className="flex flex-wrap gap-3">

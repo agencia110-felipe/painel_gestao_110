@@ -5,7 +5,6 @@ import authRouter from './routes/auth'
 import equipeRouter from './routes/equipe'
 import fixosRouter from './routes/fixos'
 import variaveisRouter from './routes/variaveis'
-import procfyRouter from './routes/procfy'
 import { seedIfEmpty } from './seed'
 
 const app = express()
@@ -30,7 +29,6 @@ app.use('/api/auth',      authRouter)
 app.use('/api/equipe',    equipeRouter)
 app.use('/api/fixos',     fixosRouter)
 app.use('/api/variaveis', variaveisRouter)
-app.use('/api/procfy',    procfyRouter)
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -7,12 +7,10 @@ interface ConfigStore {
   params: ConfigParams
   pacotes: PacoteBase[]
   sheets: SheetsConfig
-  procfyAutoSync: boolean
   setParam: <K extends keyof ConfigParams>(key: K, value: ConfigParams[K]) => void
   resetParams: () => void
   updatePacote: (index: number, pacote: Partial<PacoteBase>) => void
   setSheetsConfig: (config: Partial<SheetsConfig>) => void
-  setProcfyAutoSync: (v: boolean) => void
 }
 
 export const useConfigStore = create<ConfigStore>()(
@@ -25,7 +23,6 @@ export const useConfigStore = create<ConfigStore>()(
         apiKey: import.meta.env.VITE_SHEETS_API_KEY || '',
         autoRefresh: true,
       },
-      procfyAutoSync: false,
       setParam: (key, value) =>
         set(s => ({ params: { ...s.params, [key]: value } })),
       resetParams: () => set({ params: DEFAULT_CONFIG }),
@@ -37,7 +34,6 @@ export const useConfigStore = create<ConfigStore>()(
         }),
       setSheetsConfig: (config) =>
         set(s => ({ sheets: { ...s.sheets, ...config } })),
-      setProcfyAutoSync: (v) => set({ procfyAutoSync: v }),
     }),
     { name: 'agencia110-config' }
   )

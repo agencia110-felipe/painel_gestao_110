@@ -40,8 +40,10 @@ export function calcTotalFolha(equipe: EquipeMembro[]): number {
   return equipe.filter(m => m.status === 'Ativo').reduce((s, m) => s + m.salario, 0)
 }
 
-export function calcTotalFixos(fixos: CustoFixo[]): number {
-  return fixos.reduce((s, f) => s + f.valor, 0)
+// fixos sem mesAno = recorrentes (legado): valem para qualquer mês
+export function calcTotalFixos(fixos: CustoFixo[], mesAno?: string): number {
+  const list = mesAno ? fixos.filter(f => !f.mesAno || f.mesAno === mesAno) : fixos
+  return list.reduce((s, f) => s + f.valor, 0)
 }
 
 export function calcTotalVariaveis(variaveis: CustoVariavel[], mesAno?: string): number {
@@ -55,7 +57,7 @@ export function calcCustoTotalMensal(
   variaveis: CustoVariavel[] = [],
   mesAno?: string
 ): number {
-  return calcTotalFolha(equipe) + calcTotalFixos(fixos) + calcTotalVariaveis(variaveis, mesAno)
+  return calcTotalFolha(equipe) + calcTotalFixos(fixos, mesAno) + calcTotalVariaveis(variaveis, mesAno)
 }
 
 // ─── Backend ─────────────────────────────────────────────────────────────────

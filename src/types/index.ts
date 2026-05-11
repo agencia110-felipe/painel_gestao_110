@@ -40,6 +40,7 @@ export interface EquipeMembro {
 
 export interface CustoFixo {
   id: string;
+  mesAno?: string;
   descricao: string;
   valor: number;
   tipo: 'Backend' | 'Operacional';

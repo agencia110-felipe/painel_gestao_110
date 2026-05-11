@@ -14,6 +14,7 @@ export const equipe = pgTable('equipe', {
 
 export const custosFixos = pgTable('custos_fixos', {
   id:         text('id').primaryKey(),
+  mesAno:     text('mes_ano'),
   descricao:  text('descricao').notNull(),
   valor:      real('valor').notNull(),
   tipo:       text('tipo').notNull(),

@@ -89,8 +89,10 @@ export function calcHorasFaturaveisTotal(
   horasMes: number,
   aproveitamentoPct: number
 ): number {
+  // Only count members with configured salary (>0) — auto-synced "shell" members
+  // from sheets have salary=0 and would inflate the hour count if included.
   return equipe
-    .filter(m => m.status === 'Ativo')
+    .filter(m => m.status === 'Ativo' && m.salario > 0)
     .reduce((s, m) => s + horasMes * aproveitamentoPct * membroFaturavelPct(m), 0)
 }
 
@@ -372,4 +374,47 @@ export function calcImpactoContratacao(
   const lucroIncremental = receitaGerada - custoNovoProfissional
   const paybackMeses = custoNovoProfissional > 0 ? Math.ceil(custoNovoProfissional / Math.max(lucroIncremental, 1)) : 0
   return { receitaGerada, lucroIncremental, paybackMeses }
+}
+
+// ─── DRE (Demonstração do Resultado do Exercício) ────────────────────────────
+
+export interface DREResult {
+  receitaBruta: number
+  impostos: number
+  lucroBruto: number
+  despesasVariaveis: number
+  lucroOperacional: number
+  despesasFixas: number
+  gastosComPessoal: number
+  resultadoLiquido: number
+  margemLiquida: number
+}
+
+/**
+ * Calcula o DRE para um período.
+ * totalFolha, totalFixos, totalVariaveis devem ser pre-calculados pelo caller
+ * com a lógica de período (nMeses, filtro, etc.) para evitar duplicação.
+ */
+export function calcDRE(
+  receitaBruta: number,
+  totalFolha: number,
+  totalFixos: number,
+  totalVariaveis: number,
+  aliquotaImpostosPct: number,
+): DREResult {
+  const impostos = receitaBruta * aliquotaImpostosPct
+  const lucroBruto = receitaBruta - impostos
+  const lucroOperacional = lucroBruto - totalVariaveis
+  const resultadoLiquido = lucroOperacional - totalFixos - totalFolha
+  return {
+    receitaBruta,
+    impostos,
+    lucroBruto,
+    despesasVariaveis: totalVariaveis,
+    lucroOperacional,
+    despesasFixas: totalFixos,
+    gastosComPessoal: totalFolha,
+    resultadoLiquido,
+    margemLiquida: receitaBruta > 0 ? resultadoLiquido / receitaBruta : 0,
+  }
 }

@@ -74,6 +74,7 @@ export interface ConfigParams {
   smAtendimentoPct: number;
   smCriacaoPct: number;
   smRevisaoPct: number;
+  aliquotaImpostosPct: number;  // alíquota efetiva de impostos sobre receita bruta
 }
 
 export interface ClienteAnalise {

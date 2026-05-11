@@ -11,7 +11,8 @@ const CACHE_TTL = 30 * 60 * 1000
 
 function parseNumBR(v: string): number {
   if (!v || v.trim() === '') return 0
-  return parseFloat(v.replace(',', '.')) || 0
+  // Remove thousand separators (dots) then convert decimal comma to dot
+  return parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
 }
 
 function parseRow(row: string[]): ClienteSheet | null {

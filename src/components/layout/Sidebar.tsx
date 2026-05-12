@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Users, UserCheck, DollarSign,
-  Activity, Package, TrendingUp, Settings, X, ChevronRight,
+  Activity, Package, TrendingUp, Settings, X, ChevronRight, LogOut,
 } from 'lucide-react'
 
 const NAV = [
@@ -18,9 +18,10 @@ const NAV = [
 interface SidebarProps {
   open: boolean
   onClose: () => void
+  onLogout?: () => void
 }
 
-export function Sidebar({ open, onClose }: SidebarProps) {
+export function Sidebar({ open, onClose, onLogout }: SidebarProps) {
   return (
     <>
       {/* Overlay mobile */}
@@ -81,7 +82,16 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 space-y-2">
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors text-sm"
+            >
+              <LogOut size={16} />
+              <span>Sair</span>
+            </button>
+          )}
           <p className="text-white/30 text-xs text-center">v1.0 · 2026</p>
         </div>
       </aside>

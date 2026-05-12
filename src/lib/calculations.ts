@@ -12,6 +12,7 @@ import type {
   PacoteBase,
   PacoteCalculado,
 } from '@/types'
+import { mesAnoToIndex } from '@/lib/aggregation'
 
 // Setores que contam como custo de backend (não faturável)
 const BACKEND_SET = new Set(['Financeiro', 'Comercial', 'RH'])
@@ -38,8 +39,14 @@ export function somaAlocacoes(alocacoes: Alocacao[]): number {
 
 // ─── Custos base ─────────────────────────────────────────────────────────────
 
-export function calcTotalFolha(equipe: EquipeMembro[]): number {
-  return equipe.filter(m => m.status === 'Ativo').reduce((s, m) => s + m.salario, 0)
+export function calcTotalFolha(equipe: EquipeMembro[], mesAno?: string): number {
+  return equipe.filter(m => {
+    if (m.status === 'Ativo') return true
+    if (mesAno && m.mesDesligamento) {
+      return mesAnoToIndex(mesAno) <= mesAnoToIndex(m.mesDesligamento)
+    }
+    return false
+  }).reduce((s, m) => s + m.salario, 0)
 }
 
 // fixos sem mesAno = recorrentes (legado): valem para qualquer mês
@@ -167,9 +174,9 @@ export function calcStatusCliente(margem: number): ClienteAnalise['status'] {
   return 'Prejuízo'
 }
 
-export function calcTicketMedioReceita(clientes: ClienteSheet[]): number {
+export function calcTicketMedioReceita(clientes: ClienteSheet[], nMeses: number = 1): number {
   if (clientes.length === 0) return 0
-  return clientes.reduce((s, c) => s + c.entradaContratual, 0) / clientes.length
+  return clientes.reduce((s, c) => s + c.entradaContratual, 0) / (clientes.length * Math.max(nMeses, 1))
 }
 
 export function calcReceitaMinimaCliente(

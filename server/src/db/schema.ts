@@ -11,7 +11,8 @@ export const equipe = pgTable('equipe', {
   socio:        boolean('socio').notNull().default(false),
   metaSalarial:    real('meta_salarial').notNull(),
   status:          text('status').notNull().default('Ativo'),
-  cargaHorariaMes: real('carga_horaria_mes'),
+  cargaHorariaMes:  real('carga_horaria_mes'),
+  mesDesligamento:  text('mes_desligamento'),
 }, (table) => [
   uniqueIndex('equipe_nome_lower_trim_idx').on(sql`lower(trim(${table.nome}))`),
 ])

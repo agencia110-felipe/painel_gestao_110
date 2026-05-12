@@ -16,6 +16,7 @@ interface CustosStore {
   updateMembro: (id: string, m: Partial<EquipeMembro>) => Promise<void>
   removeMembro: (id: string) => Promise<void>
   toggleStatus: (id: string) => Promise<void>
+  desativarMembro: (id: string, mesDesligamento: string) => Promise<void>
   addFixo: (f: Omit<CustoFixo, 'id'>) => Promise<void>
   updateFixo: (id: string, f: Partial<CustoFixo>) => Promise<void>
   removeFixo: (id: string) => Promise<void>
@@ -128,11 +129,17 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
 
   toggleStatus: async (id) => {
     const membro = get().equipe.find(x => x.id === id)
-    if (!membro) return
-    const newStatus = membro.status === 'Ativo' ? 'Inativo' : 'Ativo'
-    await equipeApi.update(id, { status: newStatus })
+    if (!membro || membro.status === 'Ativo') return
+    await equipeApi.update(id, { status: 'Ativo', mesDesligamento: null })
     set(s => ({
-      equipe: s.equipe.map(x => x.id === id ? { ...x, status: newStatus } : x),
+      equipe: s.equipe.map(x => x.id === id ? { ...x, status: 'Ativo', mesDesligamento: null } : x),
+    }))
+  },
+
+  desativarMembro: async (id, mesDesligamento) => {
+    await equipeApi.update(id, { status: 'Inativo', mesDesligamento })
+    set(s => ({
+      equipe: s.equipe.map(x => x.id === id ? { ...x, status: 'Inativo', mesDesligamento } : x),
     }))
   },
 

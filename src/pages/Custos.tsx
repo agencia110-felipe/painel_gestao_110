@@ -37,7 +37,7 @@ export function Custos() {
   const [activeTab, setActiveTab] = useState<TabId>('equipe')
   const {
     equipe, fixos, variaveis,
-    addMembro, updateMembro, removeMembro, toggleStatus,
+    addMembro, updateMembro, removeMembro, toggleStatus, desativarMembro,
     addFixo, updateFixo, removeFixo,
     addVariavel, updateVariavel, removeVariavel,
   } = useCustosStore()
@@ -83,7 +83,7 @@ export function Custos() {
         ))}
       </div>
 
-      {activeTab === 'equipe'    && <TabEquipe equipe={equipe} totalFolha={totalFolha} horasFat={horasFat} totalBackend={totalBackend} pctBackend={pctBackend} updateMembro={updateMembro} removeMembro={removeMembro} toggleStatus={toggleStatus} addMembro={addMembro} />}
+      {activeTab === 'equipe'    && <TabEquipe equipe={equipe} totalFolha={totalFolha} horasFat={horasFat} totalBackend={totalBackend} pctBackend={pctBackend} updateMembro={updateMembro} removeMembro={removeMembro} toggleStatus={toggleStatus} desativarMembro={desativarMembro} addMembro={addMembro} mesesDisponiveis={mesesDisponiveis} />}
       {activeTab === 'fixos'     && <TabFixos fixos={fixos} addFixo={addFixo} updateFixo={updateFixo} removeFixo={removeFixo} mesesDisponiveis={mesesDisponiveis} />}
       {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão')} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
       {activeTab === 'impostos'  && <TabEntradas categoria="Imposto" titulo="Impostos" descPlaceholder="Ex: DAS, ISS, INSS patronal…" variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
@@ -211,9 +211,73 @@ function AlocacoesEditor({
   )
 }
 
+// ─── Modal desativação ─────────────────────────────────────────────────────────
+
+function ModalDesativacao({
+  id,
+  equipe,
+  desativarMembro,
+  onClose,
+  mesesDisponiveis,
+}: {
+  id: string
+  equipe: EquipeMembro[]
+  desativarMembro: (id: string, mesDesligamento: string) => void
+  onClose: () => void
+  mesesDisponiveis: string[]
+}) {
+  const membro = equipe.find(m => m.id === id)
+  const defaultMes = mesesDisponiveis[mesesDisponiveis.length - 1] || ''
+  const [mesDesligamento, setMesDesligamento] = useState(defaultMes)
+
+  function handleConfirm() {
+    if (!mesDesligamento) return
+    desativarMembro(id, mesDesligamento)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl border border-border shadow-lg p-6 w-full max-w-sm">
+        <h3 className="font-semibold text-neutral mb-1">Desativar colaborador</h3>
+        <p className="text-sm text-muted mb-4">
+          Selecione o último mês em que <strong>{membro?.nome}</strong> estará na folha.
+          O custo será computado até esse mês no histórico.
+        </p>
+        <div className="mb-4">
+          <label className="text-xs text-muted mb-1 block">Mês de desligamento</label>
+          <select
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+            value={mesDesligamento}
+            onChange={e => setMesDesligamento(e.target.value)}
+          >
+            <option value="">Selecione…</option>
+            {mesesDisponiveis.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={handleConfirm}
+            disabled={!mesDesligamento}
+            className="flex-1 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Desativar
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 border border-border rounded-lg text-sm text-muted hover:text-neutral transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Tab Equipe ────────────────────────────────────────────────────────────────
 
-function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, updateMembro, removeMembro, toggleStatus, addMembro }: {
+function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, updateMembro, removeMembro, toggleStatus, desativarMembro, addMembro, mesesDisponiveis }: {
   equipe: EquipeMembro[]
   totalFolha: number
   horasFat: number
@@ -222,10 +286,13 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
   updateMembro: (id: string, m: Partial<EquipeMembro>) => void
   removeMembro: (id: string) => void
   toggleStatus: (id: string) => void
+  desativarMembro: (id: string, mesDesligamento: string) => void
   addMembro: (m: Omit<EquipeMembro, 'id'>) => void
+  mesesDisponiveis: string[]
 }) {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [modalDesativando, setModalDesativando] = useState<string | null>(null)
   const [editAlocs, setEditAlocs] = useState<Alocacao[]>([])
   const [novo, setNovo] = useState<Omit<EquipeMembro, 'id'>>({
     nome: '', cargo: '', salario: 0,
@@ -373,7 +440,7 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
                   </td>
                   <td className="px-4 py-2 text-center">
                     <button
-                      onClick={() => toggleStatus(m.id)}
+                      onClick={() => m.status === 'Ativo' ? setModalDesativando(m.id) : toggleStatus(m.id)}
                       className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                         m.status === 'Ativo'
                           ? 'bg-success-bg text-success'
@@ -414,6 +481,16 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
       >
         <Plus size={16} /> Adicionar membro
       </button>
+
+      {modalDesativando && (
+        <ModalDesativacao
+          id={modalDesativando}
+          equipe={equipe}
+          desativarMembro={desativarMembro}
+          onClose={() => setModalDesativando(null)}
+          mesesDisponiveis={mesesDisponiveis}
+        />
+      )}
 
       {showForm && (
         <div className="bg-white rounded-xl border border-primary/30 p-5 space-y-4">

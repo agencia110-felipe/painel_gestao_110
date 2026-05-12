@@ -43,15 +43,16 @@ export function useFilteredSheets() {
   )
 
   // Custos totais do período.
-  // Folha: mensal × nMeses.
+  // Folha: somada mês a mês (considera mesDesligamento de cada membro).
   // Fixos: somados por mês (fixos sem mesAno = recorrentes, contam em cada mês).
   // Variáveis: somadas apenas nos meses do filtro.
   const custoTotal = useMemo(() => {
-    const folha = calcTotalFolha(equipe)
+    const folhaPeriodo = mesesNoFiltro.length > 0
+      ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFolha(equipe, m), 0)
+      : calcTotalFolha(equipe)
     const fixosPeriodo = mesesNoFiltro.length > 0
       ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFixos(fixos, m), 0)
       : calcTotalFixos(fixos)
-    // Impostos (categoria='Imposto') contam como custo; comissões são deduzidas
     const varSemComissoes = variaveis.filter(v => v.categoria !== 'Comissão')
     const variaveisPeriodo = mesesNoFiltro.reduce(
       (acc, m) => acc + calcTotalVariaveis(varSemComissoes, m),
@@ -61,13 +62,17 @@ export function useFilteredSheets() {
       (acc, m) => acc + calcTotalComissoes(variaveis, m),
       0
     )
-    return folha * nMeses + fixosPeriodo + variaveisPeriodo - comissoesPeriodo
-  }, [equipe, fixos, variaveis, mesesNoFiltro, nMeses])
+    return folhaPeriodo + fixosPeriodo + variaveisPeriodo - comissoesPeriodo
+  }, [equipe, fixos, variaveis, mesesNoFiltro])
 
-  // Custo de um único mês (para cálculos por hora, por pacote, etc.)
+  // Custo de referência mensal (último mês do período, para custo/hora e preços)
+  const mesReferencia = mesesNoFiltro.length > 0
+    ? mesesNoFiltro[mesesNoFiltro.length - 1]
+    : mesSelecionado
+
   const custoMensal = useMemo(
-    () => calcCustoTotalMensal(equipe, fixos, variaveis, mesSelecionado),
-    [equipe, fixos, variaveis, mesSelecionado]
+    () => calcCustoTotalMensal(equipe, fixos, variaveis, mesReferencia),
+    [equipe, fixos, variaveis, mesReferencia]
   )
 
   const labelPeriodo = useMemo(() => {

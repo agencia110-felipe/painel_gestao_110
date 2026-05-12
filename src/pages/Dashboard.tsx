@@ -37,7 +37,7 @@ import {
 } from 'lucide-react'
 
 export function Dashboard() {
-  const { clientesFiltrados, colaboradoresFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro } = useFilteredSheets()
+  const { clientesFiltrados, colaboradoresFiltrados, custoTotal, custoMensal, labelPeriodo, isRange, nMeses, mesesNoFiltro } = useFilteredSheets()
   const { clientes, mesSelecionado, modoFiltro } = useSheetsStore()
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
@@ -58,8 +58,10 @@ export function Dashboard() {
 
   // Componentes de custo separados para DRE e composição
   const totalFolhaPeriodo = useMemo(
-    () => calcTotalFolha(equipe) * nMeses,
-    [equipe, nMeses]
+    () => mesesNoFiltro.length > 0
+      ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFolha(equipe, m), 0)
+      : calcTotalFolha(equipe),
+    [equipe, mesesNoFiltro]
   )
   const totalFixosPeriodo = useMemo(
     () => mesesNoFiltro.length > 0
@@ -92,12 +94,12 @@ export function Dashboard() {
     [equipe, params]
   )
 
-  const custoPorHora = calcCustoPorHoraReal(custoTotal, horasFaturaveis)
+  const custoPorHora = calcCustoPorHoraReal(custoMensal, horasFaturaveis)
   const precoMinimo = calcPrecoPorHoraMinimo(custoPorHora, params.margemDesejadaPct)
   const precoRecomendado = calcPrecoPorHoraRecomendado(precoMinimo, params.fatorComplexidadePct)
-  const ticketMedio = calcTicketMedioReceita(clientesFiltrados)
+  const ticketMedio = calcTicketMedioReceita(clientesFiltrados, nMeses)
   const ticketMedioLucro = analiseClientes.length > 0
-    ? analiseClientes.reduce((s, c) => s + c.lucroReal, 0) / analiseClientes.length
+    ? analiseClientes.reduce((s, c) => s + c.lucroReal, 0) / (analiseClientes.length * nMeses)
     : 0
 
   const totalHoras = useMemo(
@@ -290,12 +292,14 @@ export function Dashboard() {
           value={formatCurrency(receita)}
           icon={<DollarSign size={16} />}
           variant="default"
+          subtext={isRange ? `${nMeses} meses` : labelPeriodo}
         />
         <MetricCard
           label="Custo Total"
           value={formatCurrency(custoTotal)}
           icon={<AlertTriangle size={16} />}
           variant="default"
+          subtext={isRange ? `${nMeses} meses` : labelPeriodo}
         />
         <MetricCard
           label="Resultado Líquido"
@@ -315,14 +319,14 @@ export function Dashboard() {
           label="Custo / Hora Real"
           value={formatCurrency(custoPorHora)}
           icon={<Clock size={16} />}
-          subtext={`${formatHours(horasFaturaveis)} fat./mês`}
+          subtext={`${formatHours(horasFaturaveis)} fat./mês · mensal`}
         />
         <MetricCard
           label="Preço / Hora Rec."
           value={formatCurrency(precoRecomendado)}
           icon={<TrendingUp size={16} />}
           variant="info"
-          subtext={`Mín. ${formatCurrency(precoMinimo)}`}
+          subtext={`Mín. ${formatCurrency(precoMinimo)} · mensal`}
         />
       </div>
 
@@ -337,16 +341,19 @@ export function Dashboard() {
           label="Ticket Médio Receita"
           value={formatCurrency(ticketMedio)}
           icon={<DollarSign size={16} />}
+          subtext="por cliente/mês"
         />
         <MetricCard
           label="Ticket Médio Lucro"
           value={formatCurrency(ticketMedioLucro)}
           variant={ticketMedioLucro >= 0 ? 'success' : 'danger'}
+          subtext="por cliente/mês"
         />
         <MetricCard
           label="Total Horas (clientes)"
           value={formatHours(totalHoras)}
           icon={<Clock size={16} />}
+          subtext={isRange ? `${nMeses} meses` : labelPeriodo}
         />
         <MetricCard
           label="Ocupação Geral"

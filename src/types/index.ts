@@ -32,6 +32,7 @@ export interface EquipeMembro {
   metaSalarial: number;
   status: 'Ativo' | 'Inativo';
   cargaHorariaMes?: number;
+  mesDesligamento?: string | null;
 }
 
 export interface CustoFixo {

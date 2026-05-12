@@ -23,6 +23,8 @@ import {
   calcTotalFolha,
   calcTotalFixos,
   calcTotalVariaveis,
+  calcTotalImpostos,
+  calcTotalComissoes,
   calcCustoTotalMensal,
   calcDRE,
   membroFaturavelPct,
@@ -50,8 +52,8 @@ export function Dashboard() {
     [clientesFiltrados]
   )
 
-  const totalImpostos = receita * (params.aliquotaImpostosPct ?? 0)
-  const lucro = receita - custoTotal - totalImpostos
+  // custoTotal from useFilteredSheets já inclui impostos e desconta comissões
+  const lucro = receita - custoTotal
   const margemLiquida = receita > 0 ? lucro / receita : 0
 
   // Componentes de custo separados para DRE e composição
@@ -65,14 +67,24 @@ export function Dashboard() {
       : calcTotalFixos(fixos),
     [fixos, mesesNoFiltro]
   )
-  const totalVariaveisPeriodo = useMemo(
-    () => mesesNoFiltro.reduce((acc, m) => acc + calcTotalVariaveis(variaveis, m), 0),
+  const totalVariaveisOpPeriodo = useMemo(() => {
+    const varOp = variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão')
+    return mesesNoFiltro.reduce((acc, m) => acc + calcTotalVariaveis(varOp, m), 0)
+  }, [variaveis, mesesNoFiltro])
+
+  const totalImpostosPeriodo = useMemo(
+    () => mesesNoFiltro.reduce((acc, m) => acc + calcTotalImpostos(variaveis, m), 0),
+    [variaveis, mesesNoFiltro]
+  )
+
+  const totalComissoesPeriodo = useMemo(
+    () => mesesNoFiltro.reduce((acc, m) => acc + calcTotalComissoes(variaveis, m), 0),
     [variaveis, mesesNoFiltro]
   )
 
   const dre = useMemo(
-    () => calcDRE(receita, totalFolhaPeriodo, totalFixosPeriodo, totalVariaveisPeriodo, params.aliquotaImpostosPct),
-    [receita, totalFolhaPeriodo, totalFixosPeriodo, totalVariaveisPeriodo, params.aliquotaImpostosPct]
+    () => calcDRE(receita, totalFolhaPeriodo, totalFixosPeriodo, totalVariaveisOpPeriodo, totalImpostosPeriodo, totalComissoesPeriodo),
+    [receita, totalFolhaPeriodo, totalFixosPeriodo, totalVariaveisOpPeriodo, totalImpostosPeriodo, totalComissoesPeriodo]
   )
 
   const horasFaturaveis = useMemo(
@@ -150,15 +162,14 @@ export function Dashboard() {
       const clientesMes = clientes.filter(c => c.mesAno === mes)
       const receitaMes = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
       const custoMes = calcCustoTotalMensal(equipe, fixos, variaveis, mes)
-      const impostosMes = receitaMes * (params.aliquotaImpostosPct ?? 0)
       return {
         mes,
         Receita: receitaMes,
         Custo: custoMes,
-        Lucro: receitaMes - custoMes - impostosMes,
+        Lucro: receitaMes - custoMes,
       }
     })
-  }, [clientes, mesesDisponiveis, equipe, fixos, variaveis, params.aliquotaImpostosPct])
+  }, [clientes, mesesDisponiveis, equipe, fixos, variaveis])
 
   // ── Chart: Composição do custo (mês selecionado) ───────────────────────────
   const mesFiltroComposicao = modoFiltro === 'mensal' ? mesSelecionado : undefined
@@ -180,17 +191,26 @@ export function Dashboard() {
     () => fixosMes.filter(f => f.tipo === 'Operacional').reduce((s, f) => s + f.valor, 0),
     [fixosMes]
   )
-  const variaveisComposicao = useMemo(
-    () => calcTotalVariaveis(variaveis, mesFiltroComposicao),
+  const variaveisOpComposicao = useMemo(
+    () => calcTotalVariaveis(variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão'), mesFiltroComposicao),
+    [variaveis, mesFiltroComposicao]
+  )
+  const impostosComposicao = useMemo(
+    () => calcTotalImpostos(variaveis, mesFiltroComposicao),
+    [variaveis, mesFiltroComposicao]
+  )
+  const comissoesComposicao = useMemo(
+    () => calcTotalComissoes(variaveis, mesFiltroComposicao),
     [variaveis, mesFiltroComposicao]
   )
 
   const chartComposicaoCusto = [
-    { name: 'Folha Faturável',   value: folhaFaturavel,     color: CHART_COLORS.primary },
-    { name: 'Backend Equipe',    value: backendEquipe,      color: CHART_COLORS.secondary },
-    { name: 'Fixos Operacionais',value: fixosOperacionais,  color: CHART_COLORS.teal },
-    { name: 'Fixos Backend',     value: backendFixos,       color: CHART_COLORS.purple },
-    { name: 'Variáveis',         value: variaveisComposicao,color: CHART_COLORS.orange },
+    { name: 'Folha Faturável',    value: folhaFaturavel,       color: CHART_COLORS.primary },
+    { name: 'Backend Equipe',     value: backendEquipe,        color: CHART_COLORS.secondary },
+    { name: 'Fixos Operacionais', value: fixosOperacionais,    color: CHART_COLORS.teal },
+    { name: 'Fixos Backend',      value: backendFixos,         color: CHART_COLORS.purple },
+    { name: 'Variáveis',          value: variaveisOpComposicao,color: CHART_COLORS.orange },
+    { name: 'Impostos',           value: impostosComposicao,   color: CHART_COLORS.danger },
   ].filter(d => d.value > 0)
 
   // ── Chart: Lucro por cliente ───────────────────────────────────────────────
@@ -210,14 +230,13 @@ export function Dashboard() {
       const clientesMes = clientes.filter(c => c.mesAno === mes)
       const receitaMes = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
       const custoMes = calcCustoTotalMensal(equipe, fixos, variaveis, mes)
-      const impostosMes = receitaMes * (params.aliquotaImpostosPct ?? 0)
-      const lucroMes = receitaMes - custoMes - impostosMes
+      const lucroMes = receitaMes - custoMes
       return {
         mes,
         margem: receitaMes > 0 ? parseFloat(((lucroMes / receitaMes) * 100).toFixed(1)) : 0,
       }
     })
-  }, [clientes, mesesDisponiveis, equipe, fixos, variaveis, params.aliquotaImpostosPct])
+  }, [clientes, mesesDisponiveis, equipe, fixos, variaveis])
 
   const isMockData = clientes.some(c => c.cliente === 'Virage')
 
@@ -283,7 +302,7 @@ export function Dashboard() {
           value={formatCurrency(lucro)}
           icon={<TrendingUp size={16} />}
           variant={lucro >= 0 ? 'success' : 'danger'}
-          subtext={params.aliquotaImpostosPct > 0 ? `Após ${formatPercent(params.aliquotaImpostosPct)} impostos` : 'Sem impostos configurados'}
+          subtext={totalImpostosPeriodo > 0 ? `Após ${formatCurrency(totalImpostosPeriodo)} impostos` : 'Sem impostos lançados'}
         />
         <MetricCard
           label="Margem Líquida"
@@ -367,7 +386,7 @@ export function Dashboard() {
         {/* Chart 2: Composição do Custo */}
         <ChartCard
           title="Composição do Custo"
-          subtitle={`Total: ${formatCurrency(custoTotal)}`}
+          subtitle={`Total: ${formatCurrency(custoTotal)}${comissoesComposicao > 0 ? ` (comissões: -${formatCurrency(comissoesComposicao)})` : ''}`}
         >
           <ResponsiveContainer width="100%" height={280}>
             <PieChart>
@@ -446,30 +465,36 @@ export function Dashboard() {
         <div className="px-5 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-neutral text-sm">Demonstração do Resultado (DRE)</h3>
-            <p className="text-xs text-muted mt-0.5">{labelPeriodo}{params.aliquotaImpostosPct === 0 && ' — configure a alíquota de impostos em Configurações para resultado preciso'}</p>
+            <p className="text-xs text-muted mt-0.5">{labelPeriodo}{dre.impostos === 0 && ' — cadastre impostos em Custos → Impostos para resultado preciso'}</p>
           </div>
         </div>
         <div className="divide-y divide-border text-sm">
           {[
-            { label: 'Receita Bruta',        value: dre.receitaBruta,       bold: false, indent: 0,  color: '' },
-            { label: `Impostos (${formatPercent(params.aliquotaImpostosPct)})`, value: -dre.impostos, bold: false, indent: 1, color: 'text-danger' },
-            { label: 'Lucro Bruto',          value: dre.lucroBruto,         bold: true,  indent: 0,  color: dre.lucroBruto >= 0 ? 'text-success' : 'text-danger' },
-            { label: 'Despesas Variáveis',   value: -dre.despesasVariaveis, bold: false, indent: 1,  color: 'text-danger' },
-            { label: 'Lucro Operacional',    value: dre.lucroOperacional,   bold: true,  indent: 0,  color: dre.lucroOperacional >= 0 ? 'text-success' : 'text-danger' },
-            { label: 'Despesas Fixas',       value: -dre.despesasFixas,     bold: false, indent: 1,  color: 'text-danger' },
-            { label: 'Gastos com Pessoal',   value: -dre.gastosComPessoal,  bold: false, indent: 1,  color: 'text-danger' },
-            { label: 'Resultado Líquido',    value: dre.resultadoLiquido,   bold: true,  indent: 0,  color: dre.resultadoLiquido >= 0 ? 'text-success font-bold' : 'text-danger font-bold' },
-          ].map((row, i) => (
-            <div key={i} className={`flex items-center justify-between px-5 py-2.5 ${row.bold ? 'bg-bg-page' : ''}`}>
-              <span className={`text-neutral ${row.indent === 1 ? 'pl-4 text-muted' : ''} ${row.bold ? 'font-semibold' : ''}`}>
-                {row.indent === 1 ? '− ' : ''}{row.label}
-              </span>
-              <span className={`font-mono-nums tabular-nums ${row.color || 'text-neutral'} ${row.bold ? 'font-semibold' : ''}`}>
-                {formatCurrency(Math.abs(row.value))}{row.value < 0 ? '' : ''}
-                {row.value < 0 && <span className="text-xs ml-0.5 opacity-60">(saída)</span>}
-              </span>
-            </div>
-          ))}
+            { label: 'Receita Bruta',      value: dre.receitaBruta,       bold: false, sign: 1,  color: '' },
+            { label: 'Impostos',           value: dre.impostos,           bold: false, sign: -1, color: 'text-danger' },
+            { label: 'Lucro Bruto',        value: dre.lucroBruto,         bold: true,  sign: 1,  color: dre.lucroBruto >= 0 ? 'text-success' : 'text-danger' },
+            { label: 'Despesas Variáveis', value: dre.despesasVariaveis,  bold: false, sign: -1, color: 'text-danger' },
+            { label: 'Lucro Operacional',  value: dre.lucroOperacional,   bold: true,  sign: 1,  color: dre.lucroOperacional >= 0 ? 'text-success' : 'text-danger' },
+            { label: 'Despesas Fixas',     value: dre.despesasFixas,      bold: false, sign: -1, color: 'text-danger' },
+            { label: 'Gastos com Pessoal', value: dre.gastosComPessoal,   bold: false, sign: -1, color: 'text-danger' },
+            { label: 'Comissões',          value: dre.comissoes,          bold: false, sign: 1,  color: dre.comissoes > 0 ? 'text-success' : 'text-muted' },
+            { label: 'Resultado Líquido',  value: dre.resultadoLiquido,   bold: true,  sign: 1,  color: dre.resultadoLiquido >= 0 ? 'text-success font-bold' : 'text-danger font-bold' },
+          ].map((row, i) => {
+            const isSubtraction = row.sign === -1
+            const isAddition = row.sign === 1 && !row.bold && row.label !== 'Receita Bruta'
+            const prefix = isSubtraction ? '− ' : isAddition && row.value > 0 ? '+ ' : ''
+            return (
+              <div key={i} className={`flex items-center justify-between px-5 py-2.5 ${row.bold ? 'bg-bg-page' : ''}`}>
+                <span className={`text-neutral ${isSubtraction || isAddition ? 'pl-4 text-muted' : ''} ${row.bold ? 'font-semibold' : ''}`}>
+                  {prefix}{row.label}
+                </span>
+                <span className={`font-mono-nums tabular-nums ${row.color || 'text-neutral'} ${row.bold ? 'font-semibold' : ''}`}>
+                  {isSubtraction && <span className="text-xs mr-0.5 opacity-60">(saída) </span>}
+                  {formatCurrency(row.value)}
+                </span>
+              </div>
+            )
+          })}
           <div className="px-5 py-2.5 flex items-center justify-between bg-neutral/5">
             <span className="text-xs text-muted">Margem Líquida</span>
             <span className={`text-xs font-semibold ${dre.margemLiquida >= 0.25 ? 'text-success' : dre.margemLiquida >= 0 ? 'text-warning' : 'text-danger'}`}>

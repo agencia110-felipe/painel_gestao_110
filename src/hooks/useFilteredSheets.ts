@@ -13,6 +13,7 @@ import {
   calcTotalFolha,
   calcTotalFixos,
   calcTotalVariaveis,
+  calcTotalComissoes,
 } from '@/lib/calculations'
 
 export function useFilteredSheets() {
@@ -50,11 +51,17 @@ export function useFilteredSheets() {
     const fixosPeriodo = mesesNoFiltro.length > 0
       ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFixos(fixos, m), 0)
       : calcTotalFixos(fixos)
+    // Impostos (categoria='Imposto') contam como custo; comissões são deduzidas
+    const varSemComissoes = variaveis.filter(v => v.categoria !== 'Comissão')
     const variaveisPeriodo = mesesNoFiltro.reduce(
-      (acc, m) => acc + calcTotalVariaveis(variaveis, m),
+      (acc, m) => acc + calcTotalVariaveis(varSemComissoes, m),
       0
     )
-    return folha * nMeses + fixosPeriodo + variaveisPeriodo
+    const comissoesPeriodo = mesesNoFiltro.reduce(
+      (acc, m) => acc + calcTotalComissoes(variaveis, m),
+      0
+    )
+    return folha * nMeses + fixosPeriodo + variaveisPeriodo - comissoesPeriodo
   }, [equipe, fixos, variaveis, mesesNoFiltro, nMeses])
 
   // Custo de um único mês (para cálculos por hora, por pacote, etc.)

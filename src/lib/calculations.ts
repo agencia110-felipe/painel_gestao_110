@@ -53,13 +53,26 @@ export function calcTotalVariaveis(variaveis: CustoVariavel[], mesAno?: string):
   return list.reduce((s, v) => s + v.valor, 0)
 }
 
+export function calcTotalImpostos(variaveis: CustoVariavel[], mesAno?: string): number {
+  return calcTotalVariaveis(variaveis.filter(v => v.categoria === 'Imposto'), mesAno)
+}
+
+export function calcTotalComissoes(variaveis: CustoVariavel[], mesAno?: string): number {
+  return calcTotalVariaveis(variaveis.filter(v => v.categoria === 'Comissão'), mesAno)
+}
+
 export function calcCustoTotalMensal(
   equipe: EquipeMembro[],
   fixos: CustoFixo[],
   variaveis: CustoVariavel[] = [],
   mesAno?: string
 ): number {
-  return calcTotalFolha(equipe) + calcTotalFixos(fixos, mesAno) + calcTotalVariaveis(variaveis, mesAno)
+  // Impostos (categoria='Imposto') são custo; comissões (categoria='Comissão') reduzem o custo
+  const varSemComissoes = variaveis.filter(v => v.categoria !== 'Comissão')
+  return calcTotalFolha(equipe)
+    + calcTotalFixos(fixos, mesAno)
+    + calcTotalVariaveis(varSemComissoes, mesAno)
+    - calcTotalComissoes(variaveis, mesAno)
 }
 
 // ─── Backend ─────────────────────────────────────────────────────────────────
@@ -395,35 +408,38 @@ export interface DREResult {
   lucroOperacional: number
   despesasFixas: number
   gastosComPessoal: number
+  comissoes: number
   resultadoLiquido: number
   margemLiquida: number
 }
 
 /**
  * Calcula o DRE para um período.
- * totalFolha, totalFixos, totalVariaveis devem ser pre-calculados pelo caller
- * com a lógica de período (nMeses, filtro, etc.) para evitar duplicação.
+ * Todos os totais devem ser pré-calculados pelo caller com a lógica de período.
+ * totalVariaveisOp = variáveis operacionais (excluindo Imposto e Comissão).
+ * totalImpostos = soma dos lançamentos da aba Impostos.
+ * totalComissoes = soma dos lançamentos da aba Comissão (valor positivo = reduz custo).
  */
 export function calcDRE(
   receitaBruta: number,
   totalFolha: number,
   totalFixos: number,
-  totalVariaveis: number,
-  aliquotaImpostosPct: number,
+  totalVariaveisOp: number,
+  totalImpostos: number,
+  totalComissoes: number,
 ): DREResult {
-  const aliquota = aliquotaImpostosPct ?? 0
-  const impostos = receitaBruta * aliquota
-  const lucroBruto = receitaBruta - impostos
-  const lucroOperacional = lucroBruto - totalVariaveis
-  const resultadoLiquido = lucroOperacional - totalFixos - totalFolha
+  const lucroBruto = receitaBruta - totalImpostos
+  const lucroOperacional = lucroBruto - totalVariaveisOp
+  const resultadoLiquido = lucroOperacional - totalFixos - totalFolha + totalComissoes
   return {
     receitaBruta,
-    impostos,
+    impostos: totalImpostos,
     lucroBruto,
-    despesasVariaveis: totalVariaveis,
+    despesasVariaveis: totalVariaveisOp,
     lucroOperacional,
     despesasFixas: totalFixos,
     gastosComPessoal: totalFolha,
+    comissoes: totalComissoes,
     resultadoLiquido,
     margemLiquida: receitaBruta > 0 ? resultadoLiquido / receitaBruta : 0,
   }

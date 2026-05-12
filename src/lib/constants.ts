@@ -11,7 +11,6 @@ export const DEFAULT_CONFIG: ConfigParams = {
   smAtendimentoPct: 0.50,
   smCriacaoPct: 0.30,
   smRevisaoPct: 0.20,
-  aliquotaImpostosPct: 0,
 }
 
 export const PACOTES_BASE: PacoteBase[] = [

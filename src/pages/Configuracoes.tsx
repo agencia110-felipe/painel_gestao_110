@@ -93,7 +93,6 @@ export function Configuracoes() {
     { key: 'gatilhoContratacaoPct', label: 'Gatilho de contratação (%)',  min: 0,   max: 100, step: 1,   pct: true  },
     { key: 'margemDesejadaPct',     label: 'Margem desejada (%)',         min: 0,   max: 100, step: 1,   pct: true  },
     { key: 'fatorComplexidadePct',  label: 'Fator de complexidade (%)',   min: 0,   max: 100, step: 1,   pct: true  },
-    { key: 'aliquotaImpostosPct',   label: 'Alíquota de impostos (%)',    min: 0,   max: 100, step: 0.1, pct: true  },
     { key: 'trafegoPctPacote',      label: 'Tráfego % do pacote',         min: 0,   max: 100, step: 1,   pct: true  },
     { key: 'socialMediaPctPacote',  label: 'Social Media % do pacote',    min: 0,   max: 100, step: 1,   pct: true  },
     { key: 'smAtendimentoPct',      label: 'SM Atendimento %',            min: 0,   max: 100, step: 1,   pct: true  },

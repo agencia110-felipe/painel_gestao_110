@@ -12,6 +12,8 @@ import {
   calcTotalFolha,
   calcTotalFixos,
   calcTotalVariaveis,
+  calcTotalImpostos,
+  calcTotalComissoes,
   calcCustoTotalMensal,
   calcCustoBackendEquipe,
   calcCustoBackendFixos,
@@ -27,7 +29,7 @@ import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
 import { CHART_COLORS, SETOR_COLORS, TODOS_SETORES, SETORES_BACKEND_LIST } from '@/lib/constants'
 import type { EquipeMembro, CustoFixo, CustoVariavel, Alocacao } from '@/types'
 
-type TabId = 'equipe' | 'fixos' | 'variaveis' | 'resumo'
+type TabId = 'equipe' | 'fixos' | 'variaveis' | 'impostos' | 'comissao' | 'resumo'
 
 const BACKEND_SET = new Set<string>(SETORES_BACKEND_LIST)
 
@@ -49,10 +51,12 @@ export function Custos() {
   const pctBackend = calcPctBackend(equipe, fixos)
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'equipe', label: 'Equipe' },
-    { id: 'fixos', label: 'Fixos' },
+    { id: 'equipe',    label: 'Equipe' },
+    { id: 'fixos',     label: 'Fixos' },
     { id: 'variaveis', label: 'Variáveis' },
-    { id: 'resumo', label: 'Resumo' },
+    { id: 'impostos',  label: 'Impostos' },
+    { id: 'comissao',  label: 'Comissão' },
+    { id: 'resumo',    label: 'Resumo' },
   ]
 
   return (
@@ -81,7 +85,9 @@ export function Custos() {
 
       {activeTab === 'equipe'    && <TabEquipe equipe={equipe} totalFolha={totalFolha} horasFat={horasFat} totalBackend={totalBackend} pctBackend={pctBackend} updateMembro={updateMembro} removeMembro={removeMembro} toggleStatus={toggleStatus} addMembro={addMembro} />}
       {activeTab === 'fixos'     && <TabFixos fixos={fixos} addFixo={addFixo} updateFixo={updateFixo} removeFixo={removeFixo} mesesDisponiveis={mesesDisponiveis} />}
-      {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
+      {activeTab === 'variaveis' && <TabVariaveis variaveis={variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão')} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
+      {activeTab === 'impostos'  && <TabEntradas categoria="Imposto" titulo="Impostos" descPlaceholder="Ex: DAS, ISS, INSS patronal…" variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
+      {activeTab === 'comissao'  && <TabEntradas categoria="Comissão" titulo="Comissões" descPlaceholder="Ex: Comissão Google, Bônus meta…" variaveis={variaveis} addVariavel={addVariavel} updateVariavel={updateVariavel} removeVariavel={removeVariavel} mesesDisponiveis={mesesDisponiveis} />}
       {activeTab === 'resumo'    && <TabResumo equipe={equipe} fixos={fixos} variaveis={variaveis} params={params} />}
     </PageWrapper>
   )
@@ -870,6 +876,171 @@ function TabVariaveis({ variaveis, addVariavel, updateVariavel, removeVariavel, 
   )
 }
 
+// ─── Tab Impostos / Comissão (reutilizável) ────────────────────────────────────
+
+function TabEntradas({ categoria, titulo, descPlaceholder, variaveis, addVariavel, updateVariavel, removeVariavel, mesesDisponiveis }: {
+  categoria: string
+  titulo: string
+  descPlaceholder: string
+  variaveis: CustoVariavel[]
+  addVariavel: (v: Omit<CustoVariavel, 'id'>) => void
+  updateVariavel: (id: string, v: Partial<CustoVariavel>) => void
+  removeVariavel: (id: string) => void
+  mesesDisponiveis: string[]
+}) {
+  const filtradas = variaveis.filter(v => v.categoria === categoria)
+  const meses = sortMesAno([...new Set([
+    ...mesesDisponiveis,
+    ...filtradas.map(v => v.mesAno).filter(Boolean),
+  ])])
+  const defaultMes = meses[meses.length - 1] || ''
+  const [mesFiltro, setMesFiltro] = useState(defaultMes)
+  const [showForm, setShowForm] = useState(false)
+  const [novo, setNovo] = useState<Omit<CustoVariavel, 'id'>>({ mesAno: defaultMes, descricao: '', valor: 0, categoria })
+
+  const exibidas = mesFiltro ? filtradas.filter(v => v.mesAno === mesFiltro) : filtradas
+  const totalMes = exibidas.reduce((s, v) => s + v.valor, 0)
+  const isComissao = categoria === 'Comissão'
+
+  function handleAdd() {
+    if (!novo.descricao.trim() || novo.valor <= 0) return
+    addVariavel({ ...novo, categoria })
+    setNovo(p => ({ ...p, descricao: '', valor: 0 }))
+    setShowForm(false)
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className={`rounded-xl border p-4 text-sm ${isComissao ? 'bg-success-bg border-success/30 text-success' : 'bg-warning-bg border-warning/30 text-warning'}`}>
+        {isComissao
+          ? 'Comissões são receitas recebidas que reduzem o custo líquido da operação. Cada lançamento diminui o custo total do período correspondente.'
+          : 'Impostos lançados aqui são somados ao custo operacional e aparecem como linha separada no DRE.'}
+      </div>
+
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-muted">Filtrar mês:</label>
+          <select
+            className="border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white"
+            value={mesFiltro}
+            onChange={e => setMesFiltro(e.target.value)}
+          >
+            <option value="">Todos</option>
+            {meses.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <MetricCard
+          label={`Total ${titulo}`}
+          value={formatCurrency(totalMes)}
+          variant={isComissao ? 'success' : 'warning'}
+          className="!py-2 !px-4"
+        />
+      </div>
+
+      <div className="bg-white rounded-xl border border-border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Mês</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Descrição</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-muted uppercase tracking-wide">Valor</th>
+              <th className="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {exibidas.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted text-sm">
+                  Nenhum lançamento{mesFiltro ? ` em ${mesFiltro}` : ''}.
+                </td>
+              </tr>
+            )}
+            {exibidas.map(v => (
+              <tr key={v.id} className="border-b border-border last:border-0">
+                <td className="px-4 py-3 text-muted text-sm whitespace-nowrap">{v.mesAno}</td>
+                <td className="px-4 py-2">
+                  <input
+                    className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                    defaultValue={v.descricao}
+                    onBlur={e => updateVariavel(v.id, { descricao: e.target.value })}
+                  />
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <input
+                    type="number"
+                    className="w-28 text-sm text-right text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
+                    defaultValue={v.valor}
+                    onBlur={e => updateVariavel(v.id, { valor: Number(e.target.value) })}
+                  />
+                </td>
+                <td className="px-4 py-2 text-center">
+                  <button onClick={() => removeVariavel(v.id)} className="text-muted hover:text-danger transition-colors">
+                    <Trash2 size={14} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <button
+        onClick={() => setShowForm(!showForm)}
+        className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-colors"
+      >
+        <Plus size={16} /> Adicionar lançamento
+      </button>
+
+      {showForm && (
+        <div className="bg-white rounded-xl border border-primary/30 p-5 space-y-4">
+          <h3 className="font-medium text-neutral text-sm">Novo lançamento — {titulo}</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label className="text-xs text-muted mb-1 block">Mês/Ano <span className="text-danger">*</span></label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={novo.mesAno}
+                onChange={e => setNovo(p => ({ ...p, mesAno: e.target.value }))}
+              >
+                <option value="">Selecione…</option>
+                {meses.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs text-muted mb-1 block">Descrição <span className="text-danger">*</span></label>
+              <input
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={novo.descricao}
+                onChange={e => setNovo(p => ({ ...p, descricao: e.target.value }))}
+                placeholder={descPlaceholder}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted mb-1 block">Valor (R$) <span className="text-danger">*</span></label>
+              <input
+                type="number"
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={novo.valor}
+                onChange={e => setNovo(p => ({ ...p, valor: Number(e.target.value) }))}
+              />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleAdd}
+              disabled={!novo.mesAno || !novo.descricao.trim() || novo.valor <= 0}
+              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Salvar
+            </button>
+            <button onClick={() => setShowForm(false)} className="px-4 py-2 border border-border rounded-lg text-sm text-muted hover:text-neutral transition-colors">Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Tab Resumo ────────────────────────────────────────────────────────────────
 
 function TabResumo({ equipe, fixos, variaveis, params }: {
@@ -883,7 +1054,10 @@ function TabResumo({ equipe, fixos, variaveis, params }: {
 
   const totalFolha = calcTotalFolha(equipe)
   const totalFixos = calcTotalFixos(fixos)
-  const totalVar = calcTotalVariaveis(variaveis, ultimoMes)
+  const varOp = variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão')
+  const totalVar = calcTotalVariaveis(varOp, ultimoMes)
+  const totalImpostosMes = calcTotalImpostos(variaveis, ultimoMes)
+  const totalComissoesMes = calcTotalComissoes(variaveis, ultimoMes)
   const totalGeral = calcCustoTotalMensal(equipe, fixos, variaveis, ultimoMes)
   const horasFat = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
   const custoH = calcCustoPorHoraReal(totalGeral, horasFat)
@@ -892,13 +1066,16 @@ function TabResumo({ equipe, fixos, variaveis, params }: {
   const totalBack = backendEquipe + backendFixos
   const pctBack = totalGeral > 0 ? totalBack / totalGeral : 0
 
+  const custoBase = totalFolha + totalFixos + totalVar + totalImpostosMes
   const breakdown = [
-    { categoria: 'Folha de pagamento', valor: totalFolha, pct: totalGeral > 0 ? totalFolha / totalGeral : 0 },
-    { categoria: 'Custos fixos operacionais', valor: totalFixos, pct: totalGeral > 0 ? totalFixos / totalGeral : 0 },
-    { categoria: 'Custos variáveis (mês atual)', valor: totalVar, pct: totalGeral > 0 ? totalVar / totalGeral : 0 },
-    { categoria: 'Backend — equipe', valor: backendEquipe, pct: totalGeral > 0 ? backendEquipe / totalGeral : 0 },
-    { categoria: 'Backend — fixos', valor: backendFixos, pct: totalGeral > 0 ? backendFixos / totalGeral : 0 },
-  ]
+    { categoria: 'Folha de pagamento',        valor: totalFolha,       pct: custoBase > 0 ? totalFolha / custoBase : 0,       cor: '' },
+    { categoria: 'Custos fixos operacionais', valor: totalFixos,       pct: custoBase > 0 ? totalFixos / custoBase : 0,       cor: '' },
+    { categoria: 'Custos variáveis',          valor: totalVar,         pct: custoBase > 0 ? totalVar / custoBase : 0,         cor: '' },
+    { categoria: 'Impostos (mês atual)',       valor: totalImpostosMes, pct: custoBase > 0 ? totalImpostosMes / custoBase : 0, cor: 'text-danger' },
+    { categoria: 'Backend — equipe',          valor: backendEquipe,    pct: custoBase > 0 ? backendEquipe / custoBase : 0,    cor: 'text-muted' },
+    { categoria: 'Backend — fixos',           valor: backendFixos,     pct: custoBase > 0 ? backendFixos / custoBase : 0,     cor: 'text-muted' },
+    { categoria: '− Comissões (dedução)',      valor: -totalComissoesMes, pct: 0,                                              cor: 'text-success' },
+  ].filter(b => b.valor !== 0)
 
   return (
     <div className="space-y-5">
@@ -906,7 +1083,9 @@ function TabResumo({ equipe, fixos, variaveis, params }: {
         <MetricCard label="Total Folha" value={formatCurrency(totalFolha)} />
         <MetricCard label="Total Fixos" value={formatCurrency(totalFixos)} />
         <MetricCard label="Total Variáveis" value={formatCurrency(totalVar)} subtext={ultimoMes || 'sem dados'} />
-        <MetricCard label="Custo Total Mensal" value={formatCurrency(totalGeral)} variant="info" />
+        <MetricCard label="Impostos" value={formatCurrency(totalImpostosMes)} subtext={ultimoMes || 'sem dados'} variant="warning" />
+        <MetricCard label="Comissões (dedução)" value={formatCurrency(totalComissoesMes)} subtext={ultimoMes || 'sem dados'} variant="success" />
+        <MetricCard label="Custo Total Líquido" value={formatCurrency(totalGeral)} variant="info" subtext="folha+fixos+var+impostos−comissões" />
         <MetricCard label="Custo/Hora Real" value={formatCurrency(custoH)} subtext={`${formatHours(horasFat)} faturáveis`} variant="warning" />
         <MetricCard label="Backend invisível" value={formatCurrency(totalBack)} subtext={formatPercent(pctBack)} variant={pctBack > 0.3 ? 'danger' : 'default'} />
       </div>
@@ -917,12 +1096,17 @@ function TabResumo({ equipe, fixos, variaveis, params }: {
           {breakdown.map(b => (
             <div key={b.categoria}>
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-neutral">{b.categoria}</span>
-                <span className="font-medium text-neutral">{formatCurrency(b.valor)} <span className="text-muted font-normal">({formatPercent(b.pct)})</span></span>
+                <span className={b.cor || 'text-neutral'}>{b.categoria}</span>
+                <span className={`font-medium ${b.cor || 'text-neutral'}`}>
+                  {formatCurrency(Math.abs(b.valor))}
+                  {b.pct > 0 && <span className="text-muted font-normal ml-1">({formatPercent(b.pct)})</span>}
+                </span>
               </div>
-              <div className="h-1.5 bg-neutral/10 rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full" style={{ width: `${b.pct * 100}%` }} />
-              </div>
+              {b.pct > 0 && (
+                <div className="h-1.5 bg-neutral/10 rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full" style={{ width: `${b.pct * 100}%` }} />
+                </div>
+              )}
             </div>
           ))}
         </div>

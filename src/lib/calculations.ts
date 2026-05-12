@@ -246,12 +246,13 @@ function primarySetor(m: EquipeMembro): string {
 export function calcColaboradoresAnalise(
   colaboradores: ColaboradorSheet[],
   equipe: EquipeMembro[],
-  horasMesGlobal: number
+  horasMesGlobal: number,
+  nMeses: number = 1
 ): ColaboradorAnalise[] {
   const equipeMap = new Map(equipe.map(m => [m.nome.trim().toLowerCase(), m]))
   return colaboradores.map(c => {
     const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
-    const cargaEsperada = membro?.cargaHorariaMes ?? horasMesGlobal
+    const cargaEsperada = (membro?.cargaHorariaMes ?? horasMesGlobal) * nMeses
     const ocupacao = calcOcupacaoColaborador(c.tempoTrabalhado, cargaEsperada)
     const area = membro ? primarySetor(membro) : '—'
     return {

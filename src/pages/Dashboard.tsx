@@ -114,11 +114,11 @@ export function Dashboard() {
     if (colaboradoresFiltrados.length === 0) return 0
     const total = colaboradoresFiltrados.reduce((s, c) => {
       const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
-      const carga = membro?.cargaHorariaMes ?? params.horasMes
+      const carga = (membro?.cargaHorariaMes ?? params.horasMes) * nMeses
       return s + (carga > 0 ? c.tempoTrabalhado / carga : 0)
     }, 0)
     return total / colaboradoresFiltrados.length
-  }, [colaboradoresFiltrados, equipeMap, params.horasMes])
+  }, [colaboradoresFiltrados, equipeMap, params.horasMes, nMeses])
 
   const setorMaisSobrecarregado = useMemo(() => {
     const porArea: Record<string, { horas: number; carga: number }> = {}

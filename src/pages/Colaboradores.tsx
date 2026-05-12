@@ -20,7 +20,7 @@ import type { ColaboradorAnalise, ColaboradorSheet } from '@/types'
 import { Users, Clock, TrendingUp, AlertTriangle, Star, Activity } from 'lucide-react'
 
 export function Colaboradores() {
-  const { colaboradoresFiltrados, mesesNoFiltro, labelPeriodo } = useFilteredSheets()
+  const { colaboradoresFiltrados, mesesNoFiltro, nMeses, labelPeriodo } = useFilteredSheets()
   const { colaboradores } = useSheetsStore()
   const { equipe } = useCustosStore()
   const { params } = useConfigStore()
@@ -73,8 +73,8 @@ export function Colaboradores() {
   }, [colaboradores, colaboradoresFiltrados, mesesNoFiltro])
 
   const analise = useMemo(
-    () => calcColaboradoresAnalise(todosColaboradoresMerged, equipe, params.horasMes),
-    [todosColaboradoresMerged, equipe, params.horasMes]
+    () => calcColaboradoresAnalise(todosColaboradoresMerged, equipe, params.horasMes, nMeses),
+    [todosColaboradoresMerged, equipe, params.horasMes, nMeses]
   )
 
   const areasDisponiveis = useMemo(

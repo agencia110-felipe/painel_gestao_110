@@ -29,7 +29,7 @@ function progressColor(pct: number): string {
 }
 
 export function Capacidade() {
-  const { colaboradoresFiltrados, labelPeriodo } = useFilteredSheets()
+  const { colaboradoresFiltrados, nMeses, labelPeriodo } = useFilteredSheets()
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
   const { colaboradores } = useSheetsStore()
@@ -69,14 +69,18 @@ export function Capacidade() {
   }, [equipe, horasPorArea])
 
   const setoresData = useMemo(() => setoresAtivos.map(setor => {
-    const cap = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
+    // capMensal = capacidade de 1 mês; cap = capacidade do período completo
+    const capMensal = calcCapacidadeSetor(equipe, setor, params.horasMes, params.aproveitamentoPct)
+    const cap = capMensal * nMeses
     const consumo = horasPorArea[setor] ?? 0
     const pct = cap > 0 ? consumo / cap : 0
     const status = calcStatusSetor(consumo, cap, params.gatilhoContratacaoPct)
-    return { setor, cap, consumo, pct, status, folga: cap - consumo }
-  }), [equipe, params, horasPorArea, setoresAtivos])
+    return { setor, cap, capMensal, consumo, pct, status, folga: cap - consumo }
+  }), [equipe, params, horasPorArea, setoresAtivos, nMeses])
 
-  const totalCap = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
+  // Capacidade e consumo em base de período
+  const totalCapMensal = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
+  const totalCap = totalCapMensal * nMeses
   const totalConsumo = useMemo(
     () => Object.values(horasPorArea).reduce((s, h) => s + h, 0),
     [horasPorArea]
@@ -84,18 +88,21 @@ export function Capacidade() {
   const totalOcupacao = totalCap > 0 ? totalConsumo / totalCap : 0
   const totalFolga = totalCap - totalConsumo
 
-  // Preço recomendado para simulador
+  // Preço recomendado para simulador (base mensal)
   const custoTotal = calcCustoTotalMensal(equipe, fixos, variaveis)
-  const custoH = calcCustoPorHoraReal(custoTotal, totalCap)
+  const custoH = calcCustoPorHoraReal(custoTotal, totalCapMensal)
   const precoMin = calcPrecoPorHoraMinimo(custoH, params.margemDesejadaPct)
   const precoRec = calcPrecoPorHoraRecomendado(precoMin, params.fatorComplexidadePct)
 
-  // Simulador: distribui horas do novo cliente proporcionalmente ao mix real da planilha
+  // Simulador: "Se eu fechar X h/mês de novo cliente, ainda tenho capacidade?"
+  // Compara horas mensais médias do período vs capacidade mensal
+  const totalConsumoMensal = nMeses > 0 ? totalConsumo / nMeses : totalConsumo
   const simSetores = setoresAtivos.map(setor => {
     const base = setoresData.find(s => s.setor === setor)!
-    const peso = totalConsumo > 0 ? (horasPorArea[setor] ?? 0) / totalConsumo : 0
-    const novoConsumo = base.consumo + simHoras * peso
-    return { setor, novoConsumo, cap: base.cap, pct: base.cap > 0 ? novoConsumo / base.cap : 0 }
+    const consumoMensalSetor = nMeses > 0 ? base.consumo / nMeses : base.consumo
+    const peso = totalConsumoMensal > 0 ? consumoMensalSetor / totalConsumoMensal : 0
+    const novoConsumo = consumoMensalSetor + simHoras * peso
+    return { setor, novoConsumo, cap: base.capMensal, pct: base.capMensal > 0 ? novoConsumo / base.capMensal : 0 }
   })
   const gargalo = simSetores.find(s => s.pct >= 1)
   const simReceita = simHoras * precoRec

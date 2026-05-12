@@ -239,7 +239,12 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
   }
 
   function handleAdd() {
-    if (!novo.nome.trim()) return
+    const nomeTrimmed = novo.nome.trim()
+    if (!nomeTrimmed) return
+    if (equipe.some(m => m.nome.trim().toLowerCase() === nomeTrimmed.toLowerCase())) {
+      alert(`Já existe um membro com o nome "${nomeTrimmed}"`)
+      return
+    }
     addMembro({ ...novo, alocacoes: novoAlocs })
     setNovo({ nome: '', cargo: '', salario: 0, alocacoes: [{ setor: 'Tráfego', pct: 100 }], socio: false, metaSalarial: 0, status: 'Ativo', cargaHorariaMes: undefined })
     setNovoAlocs([{ setor: 'Tráfego', pct: 100 }])
@@ -284,7 +289,16 @@ function TabEquipe({ equipe, totalFolha, horasFat, totalBackend, pctBackend, upd
                     <input
                       className="w-full text-sm text-neutral bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded px-1"
                       defaultValue={m.nome}
-                      onBlur={e => updateMembro(m.id, { nome: e.target.value })}
+                      onBlur={e => {
+                        const novoNome = e.target.value.trim()
+                        if (!novoNome || novoNome.toLowerCase() === m.nome.trim().toLowerCase()) return
+                        if (equipe.some(x => x.id !== m.id && x.nome.trim().toLowerCase() === novoNome.toLowerCase())) {
+                          e.target.value = m.nome
+                          alert(`Já existe um membro com o nome "${novoNome}"`)
+                          return
+                        }
+                        updateMembro(m.id, { nome: novoNome })
+                      }}
                     />
                   </td>
                   <td className="px-4 py-2">

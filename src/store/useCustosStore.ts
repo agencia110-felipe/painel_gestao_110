@@ -24,6 +24,9 @@ interface CustosStore {
   removeVariavel: (id: string) => Promise<void>
 }
 
+// Module-level mutex — prevents concurrent syncEquipeFromSheets calls
+let _syncingEquipe = false
+
 export const useCustosStore = create<CustosStore>((set, get) => ({
   equipe: [],
   fixos: [],
@@ -55,6 +58,8 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
 
   syncEquipeFromSheets: async (cols: ColaboradorSheet[]) => {
     if (!get().initialized) return
+    if (_syncingEquipe) return
+    _syncingEquipe = true
 
     const equipeAtual = get().equipe
     const nomesExistentes = new Set(equipeAtual.map(m => m.nome.toLowerCase().trim()))
@@ -83,14 +88,24 @@ export const useCustosStore = create<CustosStore>((set, get) => ({
       })
     }
 
-    if (novos.length === 0) return
+    if (novos.length === 0) {
+      _syncingEquipe = false
+      return
+    }
 
-    const criados = await Promise.all(
-      novos.map(m => equipeApi.create(m).catch(() => null))
-    )
-    const validos = criados.filter((m): m is EquipeMembro => m !== null)
-    if (validos.length > 0) {
-      set(s => ({ equipe: [...s.equipe, ...validos] }))
+    try {
+      const criados = await Promise.all(
+        novos.map(m => equipeApi.create(m).catch(() => null))
+      )
+      const validos = criados.filter((m): m is EquipeMembro => m !== null)
+      if (validos.length > 0) {
+        // Filter out any IDs already in store (server may return existing row on conflict)
+        const idsExistentes = new Set(get().equipe.map(m => m.id))
+        const reais = validos.filter(m => !idsExistentes.has(m.id))
+        if (reais.length > 0) set(s => ({ equipe: [...s.equipe, ...reais] }))
+      }
+    } finally {
+      _syncingEquipe = false
     }
   },
 

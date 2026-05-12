@@ -1,4 +1,5 @@
-import { pgTable, text, real, boolean, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, text, real, boolean, jsonb, uniqueIndex } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 export const equipe = pgTable('equipe', {
   id:           text('id').primaryKey(),
@@ -11,7 +12,9 @@ export const equipe = pgTable('equipe', {
   metaSalarial:    real('meta_salarial').notNull(),
   status:          text('status').notNull().default('Ativo'),
   cargaHorariaMes: real('carga_horaria_mes'),
-})
+}, (table) => [
+  uniqueIndex('equipe_nome_lower_trim_idx').on(sql`lower(trim(${table.nome}))`),
+])
 
 export const custosFixos = pgTable('custos_fixos', {
   id:         text('id').primaryKey(),

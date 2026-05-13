@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -15,6 +15,7 @@ import { useRelatorioStore } from '@/store/useRelatorioStore'
 import {
   calcClientesAnalise,
   calcCustoClienteRelatorio,
+  calcCustoTotalClienteComRelatorio,
   classificarCliente,
   type CenarioCliente,
 } from '@/lib/calculations'
@@ -25,13 +26,16 @@ import type { ClienteAnalise, ClienteSheet, CustoClienteRelatorio } from '@/type
 // ─── Tipos locais ─────────────────────────────────────────────────────────────
 
 type OrdemCalculo = 'rateio' | 'real'
-type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'margemOperacional' | 'horasMes'
+type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'margemOperacional' | 'margemFinanceira' | 'horasMes'
 
 type CenarioStatus = 'Saudável' | 'Monitorar' | 'Reajuste' | 'Crítico'
 
 type ClienteEnriquecido = ClienteAnalise & {
   infoRelatorio?: CustoClienteRelatorio
-  margemOperacional: number   // from report when available, else == margemReal
+  margemOperacional: number   // (receita − custoXLS) / receita when report, else == margemReal
+  margemFinanceira: number    // (receita − custoIntegrado) / receita when report, else == margemReal
+  custoIntegrado: number      // custoXLS + custosAdicionais when report, else custoRateado
+  custosAdicionais: number    // pool adicional rateado por horas diretas
   cenario: CenarioCliente
   cenarioStatus: CenarioStatus
 }
@@ -111,30 +115,80 @@ export function Clientes() {
     return resultado
   }, [clientes, clientesFiltrados, mesesNoFiltro])
 
-  // ── Análise enriquecida com cenário ────────────────────────────────────────
+  // ── Análise enriquecida com cenário (3 passos) ────────────────────────────
   const analise = useMemo((): ClienteEnriquecido[] => {
     const base = calcClientesAnalise(todosClientesMerged, custoTotal)
+
+    // Passo 1: calcular infoRelatorio para todos os clientes
+    const infoMap = new Map<string, CustoClienteRelatorio>()
+    if (temRelatorioParaPeriodo) {
+      for (const c of base) {
+        const info = calcCustoClienteRelatorio(c.nome, null, relatoriosParaPeriodo)
+        if (info.horasTotal > 0) infoMap.set(c.nome, info)
+      }
+    }
+
+    // Passo 2: totalizar XLS para calcular o pool de custos adicionais
+    let totalXLSAllClients = 0
+    let horasXLSDiretasTotal = 0
+    for (const info of infoMap.values()) {
+      totalXLSAllClients  += info.custoTotal
+      horasXLSDiretasTotal += info.horasDiretas
+    }
+
+    // Passo 3: enriquecer cada cliente com margens integradas
     return base.map(c => {
-      const info = temRelatorioParaPeriodo
-        ? calcCustoClienteRelatorio(c.nome, null, relatoriosParaPeriodo)
-        : undefined
+      const info      = infoMap.get(c.nome)
+      const hasReport = info != null
 
-      const hasReport = info != null && info.horasTotal > 0
-      const margemOp  = hasReport && c.receita > 0
-        ? (c.receita - info!.custoTotal) / c.receita
-        : c.margemReal
+      let margemOperacional = c.margemReal
+      let margemFinanceira  = c.margemReal
+      let custoIntegrado    = c.custoRateado
+      let custosAdicionais  = 0
 
-      const diag = classificarCliente(margemOp, c.margemReal, metaMargem)
+      if (hasReport) {
+        const integrado = calcCustoTotalClienteComRelatorio(
+          c.receita,
+          info!.custoTotal,
+          info!.horasDiretas,
+          horasXLSDiretasTotal,
+          custoTotal,
+          totalXLSAllClients,
+        )
+        margemOperacional = integrado.margemOperacional
+        margemFinanceira  = integrado.margemFinanceira
+        custoIntegrado    = integrado.custoTotalIntegrado
+        custosAdicionais  = integrado.custosAdicionais
+      }
+
+      const diag = classificarCliente(margemOperacional, margemFinanceira, metaMargem)
 
       return {
         ...c,
         infoRelatorio: hasReport ? info : undefined,
-        margemOperacional: margemOp,
+        margemOperacional,
+        margemFinanceira,
+        custoIntegrado,
+        custosAdicionais,
         cenario: diag.cenario,
         cenarioStatus: CENARIO_META[diag.cenario].status,
       }
     })
   }, [todosClientesMerged, custoTotal, temRelatorioParaPeriodo, relatoriosParaPeriodo, metaMargem])
+
+  // ── Verificação de consistência entre método integrado e rateio ───────────
+  const divergencia = useMemo(() => {
+    if (!temRelatorioParaPeriodo) return 0
+    const lucroIntegrado = analise.reduce((s, c) => s + (c.receita - c.custoIntegrado), 0)
+    const lucroRateio    = analise.reduce((s, c) => s + c.lucroReal, 0)
+    return Math.abs(lucroIntegrado - lucroRateio)
+  }, [analise, temRelatorioParaPeriodo])
+
+  useEffect(() => {
+    if (divergencia > 10) {
+      console.warn(`[v4.2] Divergência de lucro entre métodos: ${divergencia.toFixed(0)} — verifique custoTotal vs XLS`)
+    }
+  }, [divergencia])
 
   // ── Identificar clientes ativos (últimos 2 meses) ─────────────────────────
   const ultimos2Meses = useMemo(() => todosOsMeses.slice(-2), [todosOsMeses])
@@ -190,16 +244,19 @@ export function Clientes() {
   // ── Quando toggle muda, ajusta o sortField padrão ─────────────────────────
   function handleOrdemCalculo(ordem: OrdemCalculo) {
     setOrdemCalculo(ordem)
-    setSortField(ordem === 'real' && temRelatorioParaPeriodo ? 'margemOperacional' : 'margemReal')
+    setSortField(ordem === 'real' && temRelatorioParaPeriodo ? 'margemFinanceira' : 'margemReal')
   }
 
-  // ── Diagnóstico de precificação (usa custoRateado) ─────────────────────────
+  // ── Diagnóstico de precificação ────────────────────────────────────────────
+  // Usa custoIntegrado quando há relatório (custo real + adicionais),
+  // caso contrário cai back no custoRateado (rateio financeiro).
   const diagnosticos = useMemo(() => {
     return dadosFiltrados.map(c => {
-      const min20 = c.custoRateado / (1 - 0.20)
-      const min25 = c.custoRateado / (1 - 0.25)
+      const custoBase = c.infoRelatorio ? c.custoIntegrado : c.custoRateado
+      const min20 = custoBase / (1 - 0.20)
+      const min25 = custoBase / (1 - 0.25)
       const gap   = min25 - c.receita
-      return { ...c, min20, min25, gap, acao: gap > 0 ? 'Reajuste' : 'OK' }
+      return { ...c, custoBase, min20, min25, gap, acao: gap > 0 ? 'Reajuste' : 'OK' }
     })
   }, [dadosFiltrados])
 
@@ -267,17 +324,17 @@ export function Clientes() {
       render: row => formatCurrency(row.custoRateado),
     },
     {
-      key: 'margemReal',
+      key: 'margemFinanceira',
       header: 'Marg. Financeira',
       align: 'right',
       sortable: true,
       render: row => (
         <span className={
-          row.margemReal >= metaMargem ? 'text-green-700 font-semibold'
-          : row.margemReal >= 0        ? 'text-amber-700 font-semibold'
-          :                              'text-red-700 font-semibold'
+          row.margemFinanceira >= metaMargem ? 'text-green-700 font-semibold'
+          : row.margemFinanceira >= 0         ? 'text-amber-700 font-semibold'
+          :                                      'text-red-700 font-semibold'
         }>
-          {formatPercent(row.margemReal)}
+          {formatPercent(row.margemFinanceira)}
         </span>
       ),
     },
@@ -383,6 +440,17 @@ export function Clientes() {
         })}
       </div>
 
+      {/* ── Alerta de divergência entre métodos ─────────────────────────────── */}
+      {temRelatorioParaPeriodo && divergencia > 100 && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="mt-0.5 shrink-0 font-bold">⚠</span>
+          <span>
+            Divergência de <strong>R$ {divergencia.toFixed(0)}</strong> entre o lucro calculado pelo método integrado e pelo rateio.
+            Verifique se o custo total do período e o XLS cobrem o mesmo intervalo de datas.
+          </span>
+        </div>
+      )}
+
       {/* ── Filtros ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <select
@@ -413,8 +481,9 @@ export function Clientes() {
         >
           <option value="receita">Ordenar por Receita</option>
           <option value="lucroReal">Ordenar por Lucro</option>
-          <option value="margemReal">Ordenar por Marg. Financeira</option>
+          <option value="margemFinanceira">Ordenar por Marg. Financeira</option>
           <option value="margemOperacional">Ordenar por Marg. Operacional</option>
+          <option value="margemReal">Ordenar por Marg. Rateio</option>
           <option value="horasMes">Ordenar por Horas</option>
         </select>
 
@@ -440,7 +509,9 @@ export function Clientes() {
               <DiagnosticoClienteCard
                 receita={r.receita}
                 custoRateado={r.custoRateado}
-                margemFinanceira={r.margemReal}
+                custoIntegrado={r.custoIntegrado}
+                custosAdicionais={r.custosAdicionais}
+                margemFinanceira={r.margemFinanceira}
                 margemOperacional={r.margemOperacional}
                 metaMargem={metaMargem}
                 nMeses={nMeses}
@@ -501,7 +572,7 @@ export function Clientes() {
         <div className="px-5 py-4 border-b border-border">
           <h3 className="font-semibold text-neutral text-sm">Diagnóstico de Precificação</h3>
           <p className="text-xs text-muted mt-0.5">
-            Receita mínima para atingir 20% e 25% de margem — baseado no custo rateado total
+            Receita mínima para atingir 20% e 25% de margem — usa custo integrado quando há relatório, ou custo rateado
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -521,7 +592,7 @@ export function Clientes() {
               {diagnosticos.map((c, i) => (
                 <tr key={i} className="border-b border-border last:border-0 hover:bg-bg-page">
                   <td className="px-4 py-3 font-medium text-neutral">{c.nome}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted">{formatCurrency(c.custoRateado)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-muted">{formatCurrency(c.custoBase)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.receita)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.min20)}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatCurrency(c.min25)}</td>
@@ -544,8 +615,8 @@ export function Clientes() {
         </div>
         <div className="px-5 py-3 border-t border-border bg-bg-page">
           <p className="text-xs text-muted">
-            Custo base = custo rateado total (inclui folha, fixos, variáveis e overhead).
-            Representa o custo real que a empresa incorre para atender este cliente.
+            Custo base = custo integrado (XLS + adicionais) quando há relatório importado; custo rateado caso contrário.
+            Representa o custo total que a empresa incorre para atender este cliente.
           </p>
         </div>
       </div>

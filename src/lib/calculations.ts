@@ -507,6 +507,49 @@ export function calcMargemClienteComRelatorio(
   }
 }
 
+// ─── Custo integrado por cliente (XLS + custos restantes do store) ───────────
+
+export interface CustoClienteIntegrado {
+  custoXLS: number            // horas × custo/hora dos colaboradores (direto + overhead) do relatório
+  custosAdicionais: number    // (custoTotalEmpresa − XLSTotal) × proporção horas diretas
+  custoTotalIntegrado: number // XLS + adicionais — soma = custoTotalEmpresa sobre todos os clientes
+  margemOperacional: number   // (receita − custoXLS) / receita — custo puro do trabalho
+  margemFinanceira: number    // (receita − custoTotalIntegrado) / receita — visão completa
+}
+
+/**
+ * Integra o custo do relatório XLS com os custos não capturados do store
+ * (folha não rastreada + fixos + variáveis + impostos − comissões), garantindo
+ * que a soma de custoTotalIntegrado sobre todos os clientes = custoTotalEmpresa.
+ *
+ * Fórmula: custosAdicionais = (custoTotalEmpresa − totalXLSAllClients) × proporcao
+ * onde proporcao = horasDiretasCliente / horasDiretasTotal
+ */
+export function calcCustoTotalClienteComRelatorio(
+  receita: number,
+  custoXLSCliente: number,
+  horasXLSDiretasCliente: number,
+  horasXLSDiretasTotal: number,
+  custoTotalEmpresa: number,      // folha + fixos + variáveis + impostos − comissões
+  totalXLSAllClients: number,     // soma de infoRelatorio.custoTotal de todos os clientes
+): CustoClienteIntegrado {
+  const proporcao = horasXLSDiretasTotal > 0
+    ? horasXLSDiretasCliente / horasXLSDiretasTotal
+    : 0
+
+  const custosAdicionaisPool = custoTotalEmpresa - totalXLSAllClients
+  const custosAdicionais     = custosAdicionaisPool * proporcao
+  const custoTotalIntegrado  = custoXLSCliente + custosAdicionais
+
+  return {
+    custoXLS: custoXLSCliente,
+    custosAdicionais,
+    custoTotalIntegrado,
+    margemOperacional: receita > 0 ? (receita - custoXLSCliente)     / receita : 0,
+    margemFinanceira:  receita > 0 ? (receita - custoTotalIntegrado) / receita : 0,
+  }
+}
+
 // ─── Diagnóstico cruzado por cenário ─────────────────────────────────────────
 
 export type CenarioCliente = 'A' | 'B' | 'C' | 'D'

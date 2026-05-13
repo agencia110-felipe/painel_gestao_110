@@ -507,6 +507,73 @@ export function calcMargemClienteComRelatorio(
   }
 }
 
+// ─── Diagnóstico cruzado por cenário ─────────────────────────────────────────
+
+export type CenarioCliente = 'A' | 'B' | 'C' | 'D'
+
+export interface DiagnosticoCliente {
+  cenario: CenarioCliente
+  label: string
+  cor: string
+  bgCor: string
+  conclusao: string
+  urgencia: 'ok' | 'monitorar' | 'reajuste' | 'critico'
+}
+
+function fmtPct(v: number): string {
+  return Math.round(v * 100) + '%'
+}
+
+/**
+ * Classifica um cliente em cenário A/B/C/D cruzando margem operacional
+ * (custo real do relatório) com margem financeira (rateio completo).
+ */
+export function classificarCliente(
+  margemOperacional: number,
+  margemFinanceira: number,
+  metaMargem: number = 0.25
+): DiagnosticoCliente {
+  const opOk   = margemOperacional >= metaMargem
+  const finOk  = margemFinanceira  >= metaMargem
+  const finPos = margemFinanceira  >= 0
+
+  if (opOk && finOk) return {
+    cenario: 'A',
+    label: 'Saudável — manter e crescer',
+    cor: '#2D8A45',
+    bgCor: '#EAF3DE',
+    conclusao: 'Nenhuma ação urgente. Este é o perfil ideal de cliente. Replique na prospecção.',
+    urgencia: 'ok',
+  }
+
+  if (opOk && finPos && !finOk) return {
+    cenario: 'B',
+    label: 'Operacional OK — reajuste moderado',
+    cor: '#E69500',
+    bgCor: '#FFF3CC',
+    conclusao: `Margem operacional saudável (${fmtPct(margemOperacional)}). Cobre custos diretos com folga, mas contribuição para os custos fixos da empresa está abaixo da meta. Reajuste de 15–25% resolve.`,
+    urgencia: 'monitorar',
+  }
+
+  if (opOk && !finPos) return {
+    cenario: 'C',
+    label: 'Operacional OK — não cobre os fixos',
+    cor: '#E69500',
+    bgCor: '#FAEEDA',
+    conclusao: `O trabalho executado cobre seus próprios custos (${fmtPct(margemOperacional)} de margem operacional), mas o cliente não está pagando sua parte dos custos fixos da empresa. Precisa de reajuste no contrato ou redução de escopo.`,
+    urgencia: 'reajuste',
+  }
+
+  return {
+    cenario: 'D',
+    label: 'Deficitário — ação imediata',
+    cor: '#C0392B',
+    bgCor: '#FCEBEB',
+    conclusao: `Não cobre nem os custos operacionais diretos (${fmtPct(margemOperacional)} de margem operacional). O preço contratado está abaixo do custo real de execução, independente dos fixos. Reajuste urgente ou encerramento.`,
+    urgencia: 'critico',
+  }
+}
+
 /**
  * Calcula o DRE para um período.
  * Todos os totais devem ser pré-calculados pelo caller com a lógica de período.

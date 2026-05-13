@@ -47,6 +47,8 @@ export const TODOS_SETORES = [...SETORES_OPERACIONAIS, ...SETORES_BACKEND_LIST] 
 
 export const STATUS_COLORS = {
   'Saudável':         { bg: '#EBF8EF', text: '#2D8A45', border: '#2D8A45' },
+  'Monitorar':        { bg: '#FFF3CC', text: '#E69500', border: '#E69500' },
+  'Reajuste':         { bg: '#FAEEDA', text: '#E69500', border: '#E69500' },
   'Atenção':          { bg: '#FFF3CC', text: '#E69500', border: '#E69500' },
   'Deficitário':      { bg: '#FAD9D9', text: '#C0392B', border: '#C0392B' },
   'Prejuízo':         { bg: '#FAD9D9', text: '#C0392B', border: '#C0392B' },

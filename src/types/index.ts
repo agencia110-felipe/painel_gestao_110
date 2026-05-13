@@ -148,6 +148,7 @@ export interface TarefaRelatorio {
 export interface ResumoColaboradorCliente {
   mesAno: string;
   colaborador: string;
+  clienteRaw: string;
   clienteCanônico: string;
   isOverhead: boolean;
   horasTotais: number;

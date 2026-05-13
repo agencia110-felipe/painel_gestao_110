@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts'
 import { PageWrapper } from '@/components/layout/PageWrapper'
@@ -11,15 +11,33 @@ import { ChartCard } from '@/components/charts/ChartCard'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
+import { useRelatorioStore } from '@/store/useRelatorioStore'
 import {
   calcClientesAnalise,
   calcReceitaMinimaCliente,
   calcCustoPorHoraReal,
+  calcCustoClienteRelatorio,
 } from '@/lib/calculations'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
 import { CLUSTER_COLORS } from '@/lib/constants'
-import type { ClienteAnalise, ClienteSheet } from '@/types'
+import type { ClienteAnalise, ClienteSheet, CustoClienteRelatorio } from '@/types'
 import { DollarSign, TrendingUp, Users, BarChart2 } from 'lucide-react'
+
+type MetodoCalculo = 'rateio' | 'real'
+
+// Helpers de conversão de formato de mês
+const MESES_ABREV: Record<string, string> = {
+  Jan: '01', Fev: '02', Mar: '03', Abr: '04', Mai: '05', Jun: '06',
+  Jul: '07', Ago: '08', Set: '09', Out: '10', Nov: '11', Dez: '12',
+}
+function sheetsToRelatorioMes(mesAno: string): string {
+  const [m, y] = mesAno.split('/')
+  return `${y}-${MESES_ABREV[m] || '01'}`
+}
+
+type ClienteEnriquecido = ClienteAnalise & {
+  infoRelatorio?: CustoClienteRelatorio
+}
 
 type SortField = 'receita' | 'lucroReal' | 'margemReal' | 'horasMes'
 
@@ -27,11 +45,13 @@ export function Clientes() {
   const { clientesFiltrados, colaboradoresFiltrados, custoTotal, labelPeriodo, isRange, nMeses, mesesNoFiltro, todosOsMeses } = useFilteredSheets()
   const { params } = useConfigStore()
   const { clientes } = useSheetsStore()
+  const { relatorios } = useRelatorioStore()
 
   const [clusterFiltro, setClusterFiltro] = useState('')
   const [statusFiltro, setStatusFiltro] = useState('')
   const [atividadeFiltro, setAtividadeFiltro] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
   const [sortField, setSortField] = useState<SortField>('receita')
+  const [metodoCalculo, setMetodoCalculo] = useState<MetodoCalculo>('rateio')
 
   // Horas reais trabalhadas no período (soma de todos os colaboradores)
   const horasFaturaveis = useMemo(
@@ -40,6 +60,21 @@ export function Clientes() {
   )
 
   const custoPorHora = calcCustoPorHoraReal(custoTotal, horasFaturaveis)
+
+  // Relatório: filtrar meses disponíveis para o período selecionado
+  const mesesRelatorio = useMemo(
+    () => mesesNoFiltro.map(sheetsToRelatorioMes),
+    [mesesNoFiltro]
+  )
+
+  const relatoriosParaPeriodo = useMemo(() => {
+    if (mesesRelatorio.length === 0) return relatorios
+    return relatorios
+      .map(r => ({ ...r, resumos: r.resumos.filter(rs => mesesRelatorio.includes(rs.mesAno)) }))
+      .filter(r => r.resumos.length > 0)
+  }, [relatorios, mesesRelatorio])
+
+  const temRelatorioParaPeriodo = relatoriosParaPeriodo.length > 0
 
   const todosClientesMerged = useMemo((): ClienteSheet[] => {
     const filtradoMap = new Map(clientesFiltrados.map(c => [c.cliente, c]))
@@ -63,8 +98,15 @@ export function Clientes() {
   }, [clientes, clientesFiltrados, mesesNoFiltro])
 
   const analise = useMemo(
-    () => calcClientesAnalise(todosClientesMerged, custoTotal),
-    [todosClientesMerged, custoTotal]
+    (): ClienteEnriquecido[] => {
+      const base = calcClientesAnalise(todosClientesMerged, custoTotal)
+      if (!temRelatorioParaPeriodo || metodoCalculo !== 'real') return base
+      return base.map(c => ({
+        ...c,
+        infoRelatorio: calcCustoClienteRelatorio(c.nome, null, relatoriosParaPeriodo),
+      }))
+    },
+    [todosClientesMerged, custoTotal, temRelatorioParaPeriodo, metodoCalculo, relatoriosParaPeriodo]
   )
 
   // Dois meses mais recentes da planilha para determinar atividade
@@ -91,7 +133,7 @@ export function Clientes() {
     [analise]
   )
 
-  const dadosFiltrados = useMemo(() => {
+  const dadosFiltrados = useMemo((): ClienteEnriquecido[] => {
     let lista = analise
     if (clusterFiltro) lista = lista.filter(c => c.cluster === clusterFiltro)
     if (statusFiltro) lista = lista.filter(c => c.status === statusFiltro)
@@ -100,9 +142,14 @@ export function Clientes() {
     return [...lista].sort((a, b) => b[sortField] - a[sortField])
   }, [analise, clusterFiltro, statusFiltro, atividadeFiltro, sortField, clientesAtivos])
 
-  // KPIs summary
+  // KPIs summary — use relatorio data when in real mode
   const totalReceita = useMemo(() => dadosFiltrados.reduce((s, c) => s + c.receita, 0), [dadosFiltrados])
-  const totalLucro = useMemo(() => dadosFiltrados.reduce((s, c) => s + c.lucroReal, 0), [dadosFiltrados])
+  const totalLucro = useMemo(() => dadosFiltrados.reduce((s, c) => {
+    if (metodoCalculo === 'real' && c.infoRelatorio) {
+      return s + (c.receita - c.infoRelatorio.custoTotal)
+    }
+    return s + c.lucroReal
+  }, 0), [dadosFiltrados, metodoCalculo])
   const margemMedia = totalReceita > 0 ? totalLucro / totalReceita : 0
   const ticketMedio = dadosFiltrados.length > 0 ? totalReceita / dadosFiltrados.length : 0
 
@@ -128,11 +175,12 @@ export function Clientes() {
     return Object.entries(map).map(([name, value]) => ({ name, value }))
   }, [dadosFiltrados])
 
-  // Diagnostics
+  // Diagnostics — use relatorio hours when in real mode
   const diagnosticos = useMemo(() => {
     return dadosFiltrados.map(c => {
-      const min20 = calcReceitaMinimaCliente(c.horasMes, custoPorHora, 0.20)
-      const min25 = calcReceitaMinimaCliente(c.horasMes, custoPorHora, 0.25)
+      const horas = usingReal && c.infoRelatorio ? c.infoRelatorio.horasTotal : c.horasMes
+      const min20 = calcReceitaMinimaCliente(horas, custoPorHora, 0.20)
+      const min25 = calcReceitaMinimaCliente(horas, custoPorHora, 0.25)
       const gap = min25 - c.receita
       return {
         ...c,
@@ -142,10 +190,11 @@ export function Clientes() {
         acao: gap > 0 ? 'Reajuste urgente' : 'OK',
       }
     })
-  }, [dadosFiltrados, custoPorHora])
+  }, [dadosFiltrados, custoPorHora, usingReal])
 
-  // Table columns
-  const columns: Column<ClienteAnalise>[] = [
+  // Table columns — switch between rateio and relatorio mode
+  const usingReal = metodoCalculo === 'real' && temRelatorioParaPeriodo
+  const columns: Column<ClienteEnriquecido>[] = [
     {
       key: 'nome',
       header: 'Cliente',
@@ -175,40 +224,66 @@ export function Clientes() {
       header: 'Horas',
       align: 'right',
       sortable: true,
-      render: row => formatHours(row.horasMes),
+      render: row => {
+        const h = usingReal && row.infoRelatorio ? row.infoRelatorio.horasTotal : row.horasMes
+        return formatHours(h)
+      },
     },
-    {
-      key: 'custoRateado',
-      header: 'Custo Rateado',
-      align: 'right',
-      sortable: true,
-      render: row => formatCurrency(row.custoRateado),
-    },
+    ...(usingReal ? [
+      {
+        key: 'custoRateado' as keyof ClienteEnriquecido,
+        header: 'Custo Real',
+        align: 'right' as const,
+        render: (row: ClienteEnriquecido) => (
+          <span className="font-medium text-neutral">
+            {row.infoRelatorio ? formatCurrency(row.infoRelatorio.custoTotal) : '—'}
+          </span>
+        ),
+      },
+    ] : [
+      {
+        key: 'custoRateado' as keyof ClienteEnriquecido,
+        header: 'Custo Rateado',
+        align: 'right' as const,
+        sortable: true,
+        render: (row: ClienteEnriquecido) => formatCurrency(row.custoRateado),
+      },
+    ]),
     {
       key: 'lucroReal',
-      header: 'Lucro Real',
+      header: 'Lucro',
       align: 'right',
       sortable: true,
-      render: row => (
-        <span className={row.lucroReal < 0 ? 'text-danger font-medium' : 'text-success font-medium'}>
-          {formatCurrency(row.lucroReal)}
-        </span>
-      ),
+      render: row => {
+        const lucro = usingReal && row.infoRelatorio
+          ? row.receita - row.infoRelatorio.custoTotal
+          : row.lucroReal
+        return (
+          <span className={lucro < 0 ? 'text-danger font-medium' : 'text-success font-medium'}>
+            {formatCurrency(lucro)}
+          </span>
+        )
+      },
     },
     {
       key: 'margemReal',
       header: 'Margem',
       align: 'right',
       sortable: true,
-      render: row => (
-        <span className={
-          row.margemReal >= 0.25 ? 'text-success font-medium'
-          : row.margemReal >= 0.10 ? 'text-warning font-medium'
-          : 'text-danger font-medium'
-        }>
-          {formatPercent(row.margemReal)}
-        </span>
-      ),
+      render: row => {
+        const margem = usingReal && row.infoRelatorio
+          ? (row.receita > 0 ? (row.receita - row.infoRelatorio.custoTotal) / row.receita : 0)
+          : row.margemReal
+        return (
+          <span className={
+            margem >= 0.25 ? 'text-success font-medium'
+            : margem >= 0.10 ? 'text-warning font-medium'
+            : 'text-danger font-medium'
+          }>
+            {formatPercent(margem)}
+          </span>
+        )
+      },
     },
     {
       key: 'receitaPorHora',
@@ -237,9 +312,27 @@ export function Clientes() {
   return (
     <PageWrapper>
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral">Análise de Clientes</h1>
-        <p className="text-sm text-muted mt-1">Lucratividade e saúde financeira por cliente — {labelPeriodo}</p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral">Análise de Clientes</h1>
+          <p className="text-sm text-muted mt-1">Lucratividade e saúde financeira por cliente — {labelPeriodo}</p>
+        </div>
+        <div className="flex items-center gap-1 bg-bg-page border border-border rounded-lg p-1 text-sm">
+          <button
+            onClick={() => setMetodoCalculo('rateio')}
+            className={`px-3 py-1.5 rounded-md transition-colors font-medium ${metodoCalculo === 'rateio' ? 'bg-white text-primary shadow-sm' : 'text-muted hover:text-neutral'}`}
+          >
+            Rateio por horas
+          </button>
+          <button
+            onClick={() => temRelatorioParaPeriodo && setMetodoCalculo('real')}
+            disabled={!temRelatorioParaPeriodo}
+            title={!temRelatorioParaPeriodo ? 'Sem relatório importado para este período' : undefined}
+            className={`px-3 py-1.5 rounded-md transition-colors font-medium ${metodoCalculo === 'real' ? 'bg-white text-primary shadow-sm' : 'text-muted hover:text-neutral'} disabled:opacity-40 disabled:cursor-not-allowed`}
+          >
+            Custo real (relatório)
+          </button>
+        </div>
       </div>
 
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
@@ -330,44 +423,95 @@ export function Clientes() {
           data={dadosFiltrados}
           keyExtractor={(_, i) => String(i)}
           expandedRow={(row) => {
-            const r = row as unknown as ClienteAnalise
+            const r = row as unknown as ClienteEnriquecido
             const min20 = calcReceitaMinimaCliente(r.horasMes, custoPorHora, 0.20)
             const min25 = calcReceitaMinimaCliente(r.horasMes, custoPorHora, 0.25)
             const gap20 = min20 - r.receita
             const gap25 = min25 - r.receita
+            const info = usingReal ? r.infoRelatorio : undefined
             return (
-              <div className="flex flex-wrap gap-6 text-sm">
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Break-even</span>
-                  <p className="font-semibold text-neutral mt-0.5">{formatCurrency(r.breakEven)}</p>
-                  <p className="text-xs text-muted mt-0.5">Receita mínima para lucro zero</p>
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-6 text-sm">
+                  <div>
+                    <span className="text-muted text-xs uppercase tracking-wide">Break-even</span>
+                    <p className="font-semibold text-neutral mt-0.5">{formatCurrency(r.breakEven)}</p>
+                    <p className="text-xs text-muted mt-0.5">Receita mínima para lucro zero</p>
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs uppercase tracking-wide">Concentração</span>
+                    <p className={`font-semibold mt-0.5 ${r.concentracao > 0.20 ? 'text-warning' : 'text-neutral'}`}>
+                      {formatPercent(r.concentracao)}
+                    </p>
+                    <p className="text-xs text-muted mt-0.5">{r.concentracao > 0.20 ? 'Risco: >20% da receita' : 'Dentro do limite'}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs uppercase tracking-wide">Receita mínima para 20%</span>
+                    <p className="font-semibold text-neutral mt-0.5">{formatCurrency(min20)}</p>
+                    <p className={`text-xs mt-0.5 ${gap20 > 0 ? 'text-danger' : 'text-success'}`}>
+                      {gap20 > 0 ? `Falta ${formatCurrency(gap20)}` : `Excesso de ${formatCurrency(Math.abs(gap20))}`}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs uppercase tracking-wide">Receita mínima para 25%</span>
+                    <p className="font-semibold text-neutral mt-0.5">{formatCurrency(min25)}</p>
+                    <p className={`text-xs mt-0.5 ${gap25 > 0 ? 'text-danger' : 'text-success'}`}>
+                      {gap25 > 0 ? `Falta ${formatCurrency(gap25)}` : `Excesso de ${formatCurrency(Math.abs(gap25))}`}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-muted text-xs uppercase tracking-wide">Receita atual</span>
+                    <p className="font-semibold text-neutral mt-0.5">{formatCurrency(r.receita)}</p>
+                    <p className="text-xs text-muted mt-0.5">{formatHours(r.horasMes)} · {formatCurrency(r.receitaPorHora)}/h</p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Concentração</span>
-                  <p className={`font-semibold mt-0.5 ${r.concentracao > 0.20 ? 'text-warning' : 'text-neutral'}`}>
-                    {formatPercent(r.concentracao)}
-                  </p>
-                  <p className="text-xs text-muted mt-0.5">{r.concentracao > 0.20 ? 'Risco: &gt;20% da receita' : 'Dentro do limite'}</p>
-                </div>
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Receita mínima para 20%</span>
-                  <p className="font-semibold text-neutral mt-0.5">{formatCurrency(min20)}</p>
-                  <p className={`text-xs mt-0.5 ${gap20 > 0 ? 'text-danger' : 'text-success'}`}>
-                    {gap20 > 0 ? `Falta ${formatCurrency(gap20)}` : `Excesso de ${formatCurrency(Math.abs(gap20))}`}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Receita mínima para 25%</span>
-                  <p className="font-semibold text-neutral mt-0.5">{formatCurrency(min25)}</p>
-                  <p className={`text-xs mt-0.5 ${gap25 > 0 ? 'text-danger' : 'text-success'}`}>
-                    {gap25 > 0 ? `Falta ${formatCurrency(gap25)}` : `Excesso de ${formatCurrency(Math.abs(gap25))}`}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-muted text-xs uppercase tracking-wide">Receita atual</span>
-                  <p className="font-semibold text-neutral mt-0.5">{formatCurrency(r.receita)}</p>
-                  <p className="text-xs text-muted mt-0.5">{formatHours(r.horasMes)} · {formatCurrency(r.receitaPorHora)}/h</p>
-                </div>
+
+                {info && info.colaboradores.length > 0 && (
+                  <div className="border-t border-border pt-3">
+                    <p className="text-xs font-medium text-muted uppercase tracking-wide mb-2">
+                      {r.nome} — Custo direto por colaborador ({labelPeriodo})
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-muted">
+                            <th className="text-left py-1 pr-4 font-medium">Colaborador</th>
+                            <th className="text-right py-1 pr-4 font-medium">Horas diretas</th>
+                            <th className="text-right py-1 pr-4 font-medium">Custo direto</th>
+                            <th className="text-right py-1 font-medium">Custo/h</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {info.colaboradores.map((c, i) => (
+                            <tr key={i} className="border-t border-border/50">
+                              <td className="py-1 pr-4 text-neutral font-medium">{c.nome}</td>
+                              <td className="py-1 pr-4 text-right tabular-nums">{formatHours(c.horas)}</td>
+                              <td className="py-1 pr-4 text-right tabular-nums">{formatCurrency(c.custo)}</td>
+                              <td className="py-1 text-right tabular-nums text-muted">{formatCurrency(c.custoHora)}/h</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-border font-semibold">
+                            <td className="py-1.5 pr-4 text-neutral">Subtotal direto</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums">{formatHours(info.horasDiretas)}</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums">{formatCurrency(info.custoDireto)}</td>
+                            <td className="py-1.5 text-right text-muted text-xs">—</td>
+                          </tr>
+                          <tr className="text-muted">
+                            <td className="py-1 pr-4">+ Overhead rateado</td>
+                            <td className="py-1 pr-4 text-right tabular-nums">{formatHours(info.horasOverhead)}</td>
+                            <td className="py-1 pr-4 text-right tabular-nums">{formatCurrency(info.custoOverhead)}</td>
+                            <td></td>
+                          </tr>
+                          <tr className="border-t border-border font-bold">
+                            <td className="py-1.5 pr-4 text-neutral">= Total</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums text-neutral">{formatHours(info.horasTotal)}</td>
+                            <td className="py-1.5 pr-4 text-right tabular-nums text-neutral">{formatCurrency(info.custoTotal)}</td>
+                            <td></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           }}

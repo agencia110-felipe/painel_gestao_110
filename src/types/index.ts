@@ -132,3 +132,43 @@ export interface SheetsConfig {
   apiKey: string;
   autoRefresh: boolean;
 }
+
+export interface ResumoColaboradorCliente {
+  mesAno: string;
+  colaborador: string;
+  clienteCanônico: string;
+  isOverhead: boolean;
+  horasTotais: number;
+  custoTotal: number;
+  nTarefas: number;
+}
+
+export interface CustoClienteRelatorio {
+  cliente: string;
+  mesAno: string;
+  horasDiretas: number;
+  custoDireto: number;
+  horasOverhead: number;
+  custoOverhead: number;
+  horasTotal: number;
+  custoTotal: number;
+  colaboradores: {
+    nome: string;
+    horas: number;
+    custo: number;
+    custoHora: number;
+  }[];
+}
+
+export interface RelatorioImportado {
+  id: string;
+  nomeArquivo: string;
+  periodoInicio: string;
+  periodoFim: string;
+  dataImport: string;
+  mesesCobertos: string[];
+  totalTarefas: number;
+  totalColaboradores: number;
+  clientesNaoMapeados: string[];
+  resumos: ResumoColaboradorCliente[];
+}

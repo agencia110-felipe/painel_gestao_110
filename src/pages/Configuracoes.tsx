@@ -1,20 +1,27 @@
-import { useState } from 'react'
-import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, AlertTriangle, FileText } from 'lucide-react'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
+import { useRelatorioStore } from '@/store/useRelatorioStore'
+import { parseRelatorioXLS, MAPA_CLIENTES_RELATORIO } from '@/lib/parseRelatorio'
 import type { ConfigParams } from '@/types'
 
 export function Configuracoes() {
   const { params, pacotes, sheets, setParam, resetParams, updatePacote, setSheetsConfig } = useConfigStore()
   const { equipe, fixos, variaveis, addMembro, addFixo, addVariavel, removeMembro, removeFixo, removeVariavel } = useCustosStore()
   const { clientes, lastSync, error } = useSheetsStore()
+  const { relatorios, mapeamentoCustom, addRelatorio, removeRelatorio, addMapeamento } = useRelatorioStore()
 
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [testMsg, setTestMsg] = useState('')
   const [showRaw, setShowRaw] = useState(false)
   const [clearConfirm, setClearConfirm] = useState(false)
+  const [importandoRelatorio, setImportandoRelatorio] = useState(false)
+  const [relatorioErro, setRelatorioErro] = useState('')
+  const [novosMapeamentos, setNovosMapeamentos] = useState<Record<string, string>>({})
+  const relatorioInputRef = useRef<HTMLInputElement>(null)
 
   async function handleTestConnection() {
     if (!sheets.spreadsheetId || !sheets.apiKey) {
@@ -86,6 +93,41 @@ export function Configuracoes() {
     setClearConfirm(false)
     window.location.reload()
   }
+
+  async function handleImportRelatorio(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportandoRelatorio(true)
+    setRelatorioErro('')
+    try {
+      const resultado = await parseRelatorioXLS(file, mapeamentoCustom)
+      addRelatorio(resultado)
+    } catch (err) {
+      setRelatorioErro('Erro ao processar o arquivo. Verifique se é um .xls ou .xlsx válido.')
+      console.error(err)
+    } finally {
+      setImportandoRelatorio(false)
+      e.target.value = ''
+    }
+  }
+
+  function formatMesRelatorio(mes: string): string {
+    const MESES: Record<string, string> = {
+      '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr',
+      '05': 'Mai', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+      '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez',
+    }
+    const [y, m] = mes.split('-')
+    return `${MESES[m] || m}/${y}`
+  }
+
+  // Collect all unmapped clients across all reports (excluding custom-mapped)
+  const clientesSemMapeamento = [...new Set(
+    relatorios.flatMap(r => r.clientesNaoMapeados.filter(c => !mapeamentoCustom[c]))
+  )]
+
+  // All known canonical names for the mapping dropdown
+  const clientesCanônicos = [...new Set(Object.values(MAPA_CLIENTES_RELATORIO).filter(v => !v.startsWith('__')))]
 
   const paramFields: { key: keyof ConfigParams; label: string; min: number; max: number; step: number; pct: boolean }[] = [
     { key: 'horasMes',              label: 'Horas/mês',                   min: 1,   max: 300, step: 1,   pct: false },
@@ -274,7 +316,115 @@ export function Configuracoes() {
           </div>
         </section>
 
-        {/* ── Seção 4: Dados ── */}
+        {/* ── Seção 4: Relatórios de Atividade ── */}
+        <section className="bg-white rounded-xl border border-border p-5">
+          <h2 className="font-semibold text-neutral mb-1">Relatórios de Atividade</h2>
+          <p className="text-xs text-muted mb-4">
+            Importe o relatório XLS/XLSX exportado da ferramenta de gestão de tarefas para calcular o custo real por cliente.
+          </p>
+
+          <div className="flex items-center gap-3 mb-5">
+            <label className={`flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium transition-colors cursor-pointer ${importandoRelatorio ? 'opacity-60 pointer-events-none' : 'hover:bg-primary/90'}`}>
+              <Upload size={14} />
+              {importandoRelatorio ? 'Processando...' : 'Importar relatório (.xls/.xlsx)'}
+              <input
+                ref={relatorioInputRef}
+                type="file"
+                accept=".xls,.xlsx"
+                className="hidden"
+                onChange={handleImportRelatorio}
+                disabled={importandoRelatorio}
+              />
+            </label>
+            {relatorioErro && (
+              <span className="text-xs text-danger flex items-center gap-1">
+                <XCircle size={12} /> {relatorioErro}
+              </span>
+            )}
+          </div>
+
+          {relatorios.length === 0 ? (
+            <p className="text-sm text-muted">Nenhum relatório importado.</p>
+          ) : (
+            <div className="space-y-2 mb-4">
+              {relatorios.map(r => {
+                const inicio = formatMesRelatorio(r.periodoInicio)
+                const fim = r.periodoFim !== r.periodoInicio ? `–${formatMesRelatorio(r.periodoFim)}` : ''
+                const dataImport = new Date(r.dataImport).toLocaleDateString('pt-BR')
+                return (
+                  <div key={r.id} className="flex items-center justify-between bg-bg-page rounded-lg px-4 py-3 border border-border">
+                    <div className="flex items-center gap-3">
+                      <FileText size={16} className="text-primary shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-neutral">
+                          {inicio}{fim} · {r.totalColaboradores} colaboradores · {r.totalTarefas.toLocaleString('pt-BR')} tarefas
+                        </p>
+                        <p className="text-xs text-muted">
+                          {r.nomeArquivo} · Importado em {dataImport}
+                          {r.clientesNaoMapeados.length > 0 && (
+                            <span className="text-warning ml-2">
+                              · {r.clientesNaoMapeados.length} cliente(s) sem mapeamento
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => removeRelatorio(r.id)}
+                      className="text-muted hover:text-danger transition-colors ml-4 shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {clientesSemMapeamento.length > 0 && (
+            <div className="border border-warning/40 rounded-xl p-4 bg-warning-bg">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle size={14} className="text-warning" />
+                <span className="text-sm font-medium text-warning">
+                  {clientesSemMapeamento.length} cliente(s) sem mapeamento — associe ao cliente do sistema
+                </span>
+              </div>
+              <div className="space-y-2">
+                {clientesSemMapeamento.map(raw => (
+                  <div key={raw} className="flex items-center gap-3">
+                    <span className="text-sm font-mono text-neutral bg-white border border-border rounded px-2 py-1 min-w-[180px]">
+                      "{raw}"
+                    </span>
+                    <span className="text-muted text-sm">→</span>
+                    <select
+                      className="border border-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      value={novosMapeamentos[raw] || ''}
+                      onChange={e => setNovosMapeamentos(p => ({ ...p, [raw]: e.target.value }))}
+                    >
+                      <option value="">Selecione…</option>
+                      <option value="__OVERHEAD__">Ignorar (overhead)</option>
+                      {clientesCanônicos.sort().map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <button
+                      disabled={!novosMapeamentos[raw]}
+                      onClick={() => {
+                        addMapeamento(raw, novosMapeamentos[raw])
+                        setNovosMapeamentos(p => { const n = { ...p }; delete n[raw]; return n })
+                      }}
+                      className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Salvar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ── Seção 5: Dados ── */}
         <section className="bg-white rounded-xl border border-border p-5">
           <h2 className="font-semibold text-neutral mb-4">Gerenciamento de Dados</h2>
           <div className="flex flex-wrap gap-3">

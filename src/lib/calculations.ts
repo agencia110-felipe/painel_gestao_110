@@ -11,6 +11,8 @@ import type {
   SetorCapacidade,
   PacoteBase,
   PacoteCalculado,
+  RelatorioImportado,
+  CustoClienteRelatorio,
 } from '@/types'
 import { mesAnoToIndex } from '@/lib/aggregation'
 
@@ -419,6 +421,90 @@ export interface DREResult {
   comissoes: number
   resultadoLiquido: number
   margemLiquida: number
+}
+
+// ─── Custo direto por cliente (via relatório de atividades) ──────────────────
+
+export function calcCustoClienteRelatorio(
+  cliente: string,
+  mesAno: string | null,
+  relatorios: RelatorioImportado[]
+): CustoClienteRelatorio {
+  const resumos = relatorios.flatMap(r => r.resumos).filter(r =>
+    mesAno ? r.mesAno === mesAno : true
+  )
+
+  const diretos = resumos.filter(r => r.clienteCanônico === cliente && !r.isOverhead)
+  const overheads = resumos.filter(r => r.isOverhead)
+  const todosClientes = resumos.filter(
+    r => !r.isOverhead && r.clienteCanônico !== '__NAO_MAPEADO__'
+  )
+
+  const horasDiretas = diretos.reduce((a, r) => a + r.horasTotais, 0)
+  const custoDireto  = diretos.reduce((a, r) => a + r.custoTotal, 0)
+  const totalHorasTodosClientes = todosClientes.reduce((a, r) => a + r.horasTotais, 0)
+  const totalHorasOverhead = overheads.reduce((a, r) => a + r.horasTotais, 0)
+  const totalCustoOverhead = overheads.reduce((a, r) => a + r.custoTotal, 0)
+
+  const proporcao = totalHorasTodosClientes > 0 ? horasDiretas / totalHorasTodosClientes : 0
+  const horasOverhead = totalHorasOverhead * proporcao
+  const custoOverhead = totalCustoOverhead * proporcao
+
+  const mapaColabs = new Map<string, { horas: number; custo: number }>()
+  diretos.forEach(r => {
+    const nome = r.colaborador
+      .replace(/\s+(Tráfego|Gestão|Atendimento|Criação|Redação|Revisão|Mídia|Inbound|Financeiro|Monitoramento)\s*$/i, '')
+      .trim()
+    if (!mapaColabs.has(nome)) mapaColabs.set(nome, { horas: 0, custo: 0 })
+    const c = mapaColabs.get(nome)!
+    c.horas += r.horasTotais
+    c.custo += r.custoTotal
+  })
+
+  return {
+    cliente,
+    mesAno: mesAno ?? 'periodo',
+    horasDiretas,
+    custoDireto,
+    horasOverhead,
+    custoOverhead,
+    horasTotal: horasDiretas + horasOverhead,
+    custoTotal: custoDireto + custoOverhead,
+    colaboradores: [...mapaColabs.entries()]
+      .map(([nome, v]) => ({
+        nome,
+        horas: v.horas,
+        custo: v.custo,
+        custoHora: v.horas > 0 ? v.custo / v.horas : 0,
+      }))
+      .sort((a, b) => b.horas - a.horas),
+  }
+}
+
+export function calcMargemClienteComRelatorio(
+  receitaPeriodo: number,
+  custoClienteRelatorio: CustoClienteRelatorio,
+  custosAdicionaisPeriodo: number,
+  horasTotalTodosClientes: number
+): {
+  margemContribuicao: number
+  margemLiquida: number
+  lucroContribuicao: number
+  lucroLiquido: number
+} {
+  const proporcaoHoras = horasTotalTodosClientes > 0
+    ? custoClienteRelatorio.horasDiretas / horasTotalTodosClientes
+    : 0
+  const custosAdicionaisCliente = custosAdicionaisPeriodo * proporcaoHoras
+  const custoTotalCliente = custoClienteRelatorio.custoTotal + custosAdicionaisCliente
+  const lucroContribuicao = receitaPeriodo - custoClienteRelatorio.custoDireto
+  const lucroLiquido = receitaPeriodo - custoTotalCliente
+  return {
+    margemContribuicao: receitaPeriodo > 0 ? lucroContribuicao / receitaPeriodo : 0,
+    margemLiquida: receitaPeriodo > 0 ? lucroLiquido / receitaPeriodo : 0,
+    lucroContribuicao,
+    lucroLiquido,
+  }
 }
 
 /**

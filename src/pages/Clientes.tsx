@@ -11,11 +11,8 @@ import { DiagnosticoClienteCard } from '@/components/clientes/DiagnosticoCliente
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
-import { useRelatorioStore } from '@/store/useRelatorioStore'
 import {
   calcClientesAnalise,
-  calcCustoClienteRelatorio,
-  calcCustoTotalClienteComRelatorio,
   classificarCliente,
   type CenarioCliente,
 } from '@/lib/calculations'
@@ -42,15 +39,6 @@ type ClienteEnriquecido = ClienteAnalise & {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const MESES_ABREV: Record<string, string> = {
-  Jan: '01', Fev: '02', Mar: '03', Abr: '04', Mai: '05', Jun: '06',
-  Jul: '07', Ago: '08', Set: '09', Out: '10', Nov: '11', Dez: '12',
-}
-function sheetsToRelatorioMes(mesAno: string): string {
-  const [m, y] = mesAno.split('/')
-  return `${y}-${MESES_ABREV[m] || '01'}`
-}
-
 const CENARIO_META: Record<CenarioCliente, { label: string; cor: string; bgCor: string; status: CenarioStatus }> = {
   A: { label: 'Saudável',  cor: '#2D8A45', bgCor: '#EAF3DE', status: 'Saudável'  },
   B: { label: 'Monitorar', cor: '#E69500', bgCor: '#FFF3CC', status: 'Monitorar' },
@@ -62,12 +50,11 @@ const CENARIO_META: Record<CenarioCliente, { label: string; cor: string; bgCor: 
 
 export function Clientes() {
   const {
-    clientesFiltrados, colaboradoresFiltrados, custoTotal,
-    labelPeriodo, nMeses, mesesNoFiltro, todosOsMeses,
+    clientesFiltrados, custoTotal, labelPeriodo, nMeses, mesesNoFiltro, todosOsMeses,
+    custoXLSPorCliente, custoIntegradoPorCliente, temRelatorioNoPeriodo,
   } = useFilteredSheets()
   const { params } = useConfigStore()
   const { clientes } = useSheetsStore()
-  const { relatorios } = useRelatorioStore()
 
   // ── Estado ─────────────────────────────────────────────────────────────────
   const [clusterFiltro, setClusterFiltro]     = useState('')
@@ -77,21 +64,6 @@ export function Clientes() {
   const [sortField, setSortField]             = useState<SortField>('receita')
 
   const metaMargem = params.margemDesejadaPct  // já é decimal (0.25 = 25%)
-
-  // ── Relatórios filtrados para o período ────────────────────────────────────
-  const mesesRelatorio = useMemo(
-    () => mesesNoFiltro.map(sheetsToRelatorioMes),
-    [mesesNoFiltro]
-  )
-
-  const relatoriosParaPeriodo = useMemo(() => {
-    if (mesesRelatorio.length === 0) return relatorios
-    return relatorios
-      .map(r => ({ ...r, resumos: r.resumos.filter(rs => mesesRelatorio.includes(rs.mesAno)) }))
-      .filter(r => r.resumos.length > 0)
-  }, [relatorios, mesesRelatorio])
-
-  const temRelatorioParaPeriodo = relatoriosParaPeriodo.length > 0
 
   // ── Lista completa de clientes (ativos + inativos) ─────────────────────────
   const todosClientesMerged = useMemo((): ClienteSheet[] => {
@@ -115,57 +87,23 @@ export function Clientes() {
     return resultado
   }, [clientes, clientesFiltrados, mesesNoFiltro])
 
-  // ── Análise enriquecida com cenário (3 passos) ────────────────────────────
+  // ── Análise enriquecida com cenário ───────────────────────────────────────
   const analise = useMemo((): ClienteEnriquecido[] => {
     const base = calcClientesAnalise(todosClientesMerged, custoTotal)
-
-    // Passo 1: calcular infoRelatorio para todos os clientes
-    const infoMap = new Map<string, CustoClienteRelatorio>()
-    if (temRelatorioParaPeriodo) {
-      for (const c of base) {
-        const info = calcCustoClienteRelatorio(c.nome, null, relatoriosParaPeriodo)
-        if (info.horasTotal > 0) infoMap.set(c.nome, info)
-      }
-    }
-
-    // Passo 2: totalizar XLS para calcular o pool de custos adicionais
-    let totalXLSAllClients = 0
-    let horasXLSDiretasTotal = 0
-    for (const info of infoMap.values()) {
-      totalXLSAllClients  += info.custoTotal
-      horasXLSDiretasTotal += info.horasDiretas
-    }
-
-    // Passo 3: enriquecer cada cliente com margens integradas
     return base.map(c => {
-      const info      = infoMap.get(c.nome)
-      const hasReport = info != null
+      const xls       = custoXLSPorCliente.get(c.nome)
+      const integrado = custoIntegradoPorCliente.get(c.nome)
+      const hasReport = xls != null
 
-      let margemOperacional = c.margemReal
-      let margemFinanceira  = c.margemReal
-      let custoIntegrado    = c.custoRateado
-      let custosAdicionais  = 0
-
-      if (hasReport) {
-        const integrado = calcCustoTotalClienteComRelatorio(
-          c.receita,
-          info!.custoTotal,
-          info!.horasDiretas,
-          horasXLSDiretasTotal,
-          custoTotal,
-          totalXLSAllClients,
-        )
-        margemOperacional = integrado.margemOperacional
-        margemFinanceira  = integrado.margemFinanceira
-        custoIntegrado    = integrado.custoTotalIntegrado
-        custosAdicionais  = integrado.custosAdicionais
-      }
+      const margemOperacional = integrado?.margemOperacional ?? c.margemReal
+      const margemFinanceira  = integrado?.margemFinanceira  ?? c.margemReal
+      const custoIntegrado    = integrado?.custoTotalIntegrado ?? c.custoRateado
+      const custosAdicionais  = integrado?.custosAdicionais  ?? 0
 
       const diag = classificarCliente(margemOperacional, margemFinanceira, metaMargem)
-
       return {
         ...c,
-        infoRelatorio: hasReport ? info : undefined,
+        infoRelatorio: hasReport ? xls : undefined,
         margemOperacional,
         margemFinanceira,
         custoIntegrado,
@@ -174,15 +112,15 @@ export function Clientes() {
         cenarioStatus: CENARIO_META[diag.cenario].status,
       }
     })
-  }, [todosClientesMerged, custoTotal, temRelatorioParaPeriodo, relatoriosParaPeriodo, metaMargem])
+  }, [todosClientesMerged, custoTotal, custoXLSPorCliente, custoIntegradoPorCliente, metaMargem])
 
   // ── Verificação de consistência entre método integrado e rateio ───────────
   const divergencia = useMemo(() => {
-    if (!temRelatorioParaPeriodo) return 0
+    if (!temRelatorioNoPeriodo) return 0
     const lucroIntegrado = analise.reduce((s, c) => s + (c.receita - c.custoIntegrado), 0)
     const lucroRateio    = analise.reduce((s, c) => s + c.lucroReal, 0)
     return Math.abs(lucroIntegrado - lucroRateio)
-  }, [analise, temRelatorioParaPeriodo])
+  }, [analise, temRelatorioNoPeriodo])
 
   useEffect(() => {
     if (divergencia > 10) {
@@ -244,7 +182,7 @@ export function Clientes() {
   // ── Quando toggle muda, ajusta o sortField padrão ─────────────────────────
   function handleOrdemCalculo(ordem: OrdemCalculo) {
     setOrdemCalculo(ordem)
-    setSortField(ordem === 'real' && temRelatorioParaPeriodo ? 'margemFinanceira' : 'margemReal')
+    setSortField(ordem === 'real' && temRelatorioNoPeriodo ? 'margemFinanceira' : 'margemReal')
   }
 
   // ── Diagnóstico de precificação ────────────────────────────────────────────
@@ -338,7 +276,7 @@ export function Clientes() {
         </span>
       ),
     },
-    ...(temRelatorioParaPeriodo ? [{
+    ...(temRelatorioNoPeriodo ? [{
       key: 'margemOperacional' as keyof ClienteEnriquecido,
       header: 'Marg. Operacional',
       align: 'right' as const,
@@ -398,8 +336,8 @@ export function Clientes() {
           </button>
           <button
             onClick={() => handleOrdemCalculo('real')}
-            disabled={!temRelatorioParaPeriodo}
-            title={!temRelatorioParaPeriodo ? 'Sem relatório importado para este período' : 'Ordenar por margem operacional (custo real)'}
+            disabled={!temRelatorioNoPeriodo}
+            title={!temRelatorioNoPeriodo ? 'Sem relatório importado para este período' : 'Ordenar por margem operacional (custo real)'}
             className={`px-3 py-1.5 rounded-md transition-colors font-medium ${ordemCalculo === 'real' ? 'bg-white text-primary shadow-sm' : 'text-muted hover:text-neutral'} disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             Ordenar: Marg. Operacional
@@ -441,7 +379,7 @@ export function Clientes() {
       </div>
 
       {/* ── Alerta de divergência entre métodos ─────────────────────────────── */}
-      {temRelatorioParaPeriodo && divergencia > 100 && (
+      {temRelatorioNoPeriodo && divergencia > 100 && (
         <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <span className="mt-0.5 shrink-0 font-bold">⚠</span>
           <span>

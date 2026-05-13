@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useCustosStore } from '@/store/useCustosStore'
+import { useRelatorioStore } from '@/store/useRelatorioStore'
 import {
   agregarClientes,
   agregarColaboradores,
@@ -14,11 +15,26 @@ import {
   calcTotalFixos,
   calcTotalVariaveis,
   calcTotalComissoes,
+  calcCustoClienteRelatorio,
+  calcCustoTotalClienteComRelatorio,
+  type CustoClienteIntegrado,
 } from '@/lib/calculations'
+import type { CustoClienteRelatorio } from '@/types'
+
+// Converte "Jan/2026" (formato Sheets) → "2026-01" (formato relatório)
+const MESES_ABREV_REL: Record<string, string> = {
+  Jan: '01', Fev: '02', Mar: '03', Abr: '04', Mai: '05', Jun: '06',
+  Jul: '07', Ago: '08', Set: '09', Out: '10', Nov: '11', Dez: '12',
+}
+function sheetsToRelMes(mesAno: string): string {
+  const [abrev, ano] = mesAno.split('/')
+  return `${ano}-${MESES_ABREV_REL[abrev] || '01'}`
+}
 
 export function useFilteredSheets() {
   const { clientes, colaboradores, modoFiltro, mesSelecionado, mesInicio, mesFim } = useSheetsStore()
   const { equipe, fixos, variaveis } = useCustosStore()
+  const { relatorios } = useRelatorioStore()
 
   const todosOsMeses = useMemo(
     () => sortMesAno([...new Set(clientes.map(c => c.mesAno))]),
@@ -83,6 +99,69 @@ export function useFilteredSheets() {
 
   const isRange = modoFiltro === 'personalizado' && nMeses > 1
 
+  // ─── Integração com relatório de atividades ──────────────────────────────────
+
+  // Meses do filtro convertidos para o formato do relatório ("2026-01")
+  const mesesRelatorioNoFiltro = useMemo(
+    () => mesesNoFiltro.map(sheetsToRelMes),
+    [mesesNoFiltro]
+  )
+
+  // Relatórios filtrados ao período selecionado
+  const relatoriosFiltrados = useMemo(() => {
+    if (relatorios.length === 0) return []
+    if (mesesRelatorioNoFiltro.length === 0) return relatorios
+    return relatorios
+      .map(r => ({ ...r, resumos: r.resumos.filter(rs => mesesRelatorioNoFiltro.includes(rs.mesAno)) }))
+      .filter(r => r.resumos.length > 0)
+  }, [relatorios, mesesRelatorioNoFiltro])
+
+  // Custo XLS (direto + overhead do relatório) por cliente, no período filtrado
+  const custoXLSPorCliente = useMemo(() => {
+    const mapa = new Map<string, CustoClienteRelatorio>()
+    if (relatoriosFiltrados.length === 0) return mapa
+    const clientesUnicos = [...new Set(clientesFiltrados.map(c => c.cliente))]
+    for (const nome of clientesUnicos) {
+      const info = calcCustoClienteRelatorio(nome, null, relatoriosFiltrados)
+      if (info.horasTotal > 0) mapa.set(nome, info)
+    }
+    return mapa
+  }, [relatoriosFiltrados, clientesFiltrados])
+
+  // Totais XLS para calcular o pool de custos adicionais
+  const totalXLSAllClients = useMemo(() => {
+    let total = 0
+    custoXLSPorCliente.forEach(v => { total += v.custoTotal })
+    return total
+  }, [custoXLSPorCliente])
+
+  const totalHorasXLSDiretas = useMemo(() => {
+    let total = 0
+    custoXLSPorCliente.forEach(v => { total += v.horasDiretas })
+    return total
+  }, [custoXLSPorCliente])
+
+  // Custo integrado por cliente: XLS + custos adicionais do store proporcionais
+  const custoIntegradoPorCliente = useMemo(() => {
+    const mapa = new Map<string, CustoClienteIntegrado>()
+    if (custoXLSPorCliente.size === 0) return mapa
+    const receitaMap = new Map(clientesFiltrados.map(c => [c.cliente, c.entradaContratual]))
+    custoXLSPorCliente.forEach((xlsData, nome) => {
+      mapa.set(nome, calcCustoTotalClienteComRelatorio(
+        receitaMap.get(nome) ?? 0,
+        xlsData.custoTotal,
+        xlsData.horasDiretas,
+        totalHorasXLSDiretas,
+        custoTotal,
+        totalXLSAllClients,
+      ))
+    })
+    return mapa
+  }, [custoXLSPorCliente, totalHorasXLSDiretas, custoTotal, totalXLSAllClients, clientesFiltrados])
+
+  // Há relatório importado com dados para o período atual
+  const temRelatorioNoPeriodo = relatoriosFiltrados.length > 0
+
   return {
     clientesFiltrados,
     colaboradoresFiltrados,
@@ -93,5 +172,10 @@ export function useFilteredSheets() {
     labelPeriodo,
     isRange,
     todosOsMeses,
+    // Relatório de atividades integrado:
+    custoXLSPorCliente,
+    custoIntegradoPorCliente,
+    totalXLSAllClients,
+    temRelatorioNoPeriodo,
   }
 }

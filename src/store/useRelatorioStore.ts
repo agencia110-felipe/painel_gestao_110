@@ -19,13 +19,15 @@ export const useRelatorioStore = create<RelatorioStore>()(
       mapeamentoCustom: {},
 
       addRelatorio: (r) => {
+        // Strip tarefas before persisting — can be 15k+ items per quarter
+        const { tarefas: _, ...semTarefas } = r
         const existe = get().relatorios.find(
-          x => x.nomeArquivo === r.nomeArquivo && x.periodoInicio === r.periodoInicio
+          x => x.nomeArquivo === semTarefas.nomeArquivo && x.periodoInicio === semTarefas.periodoInicio
         )
         if (existe) {
-          set(s => ({ relatorios: s.relatorios.map(x => x.id === existe.id ? r : x) }))
+          set(s => ({ relatorios: s.relatorios.map(x => x.id === existe.id ? semTarefas : x) }))
         } else {
-          set(s => ({ relatorios: [...s.relatorios, r] }))
+          set(s => ({ relatorios: [...s.relatorios, semTarefas] }))
         }
       },
 

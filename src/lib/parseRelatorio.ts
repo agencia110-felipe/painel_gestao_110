@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import type { RelatorioImportado, ResumoColaboradorCliente } from '@/types'
+import type { RelatorioImportado, ResumoColaboradorCliente, TarefaRelatorio } from '@/types'
 
 export const MAPA_CLIENTES_RELATORIO: Record<string, string> = {
   // Servopa — sub-clientes agrupam no cliente pai
@@ -53,6 +53,31 @@ export function mapearCliente(
     ?? '__NAO_MAPEADO__'
 }
 
+function decodeHTMLEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+}
+
+const AREAS_CONHECIDAS = [
+  'Tráfego', 'Gestão', 'Atendimento', 'Criação', 'Redação', 'Revisão',
+  'Mídia', 'Inbound', 'Financeiro', 'RH', 'Monitoramento', 'Comercial',
+]
+
+function parseColaborador(raw: string): { nome: string; area: string } {
+  const regex = new RegExp(`^(.*?)(${AREAS_CONHECIDAS.join('|')})\\s*$`, 'i')
+  const match = raw.match(regex)
+  if (match) {
+    return { nome: match[1].trim(), area: match[2].trim() }
+  }
+  return { nome: raw.trim(), area: '' }
+}
+
 function parseHHMMSS(s: string): number {
   if (!s?.trim()) return 0
   const p = s.trim().split(':')
@@ -96,12 +121,14 @@ export async function parseRelatorioXLS(
 
   const mapaResumos = new Map<string, ResumoColaboradorCliente>()
   const clientesNaoMapeados = new Set<string>()
+  const tarefas: TarefaRelatorio[] = []
   let colaboradorAtual = ''
+  let areaAtual = ''
   let totalTarefas = 0
   const colaboradoresVistos = new Set<string>()
 
   for (const row of rows) {
-    const col0 = (row[0] as string | null)?.trim() ?? ''
+    const col0 = decodeHTMLEntities((row[0] as string | null)?.trim() ?? '')
     const col3 = (row[3] as string | null)?.trim() ?? ''
     const col4 = (row[4] as string | null)?.trim() ?? ''
     const col5 = (row[5] as string | null)?.trim() ?? ''
@@ -119,8 +146,10 @@ export async function parseRelatorioXLS(
       col5.includes(':') && col6.includes('R$') &&
       col5 !== 'Duração'
     if (isProfissional) {
-      colaboradorAtual = col0
-      colaboradoresVistos.add(col0)
+      const { nome, area } = parseColaborador(col0)
+      colaboradorAtual = nome
+      areaAtual = area
+      colaboradoresVistos.add(nome)
       continue
     }
 
@@ -144,6 +173,18 @@ export async function parseRelatorioXLS(
       const isOverhead = clienteCanônico === '__OVERHEAD__'
 
       totalTarefas++
+
+      tarefas.push({
+        colaborador: colaboradorAtual,
+        area: areaAtual,
+        clienteRaw,
+        clienteCanônico,
+        isOverhead,
+        mesAno,
+        duracaoHoras: horas,
+        custo,
+        descricao: col0,
+      })
 
       const chave = `${mesAno}__${colaboradorAtual}__${clienteCanônico}`
       if (!mapaResumos.has(chave)) {
@@ -177,5 +218,6 @@ export async function parseRelatorioXLS(
     totalColaboradores: colaboradoresVistos.size,
     clientesNaoMapeados: [...clientesNaoMapeados],
     resumos: [...mapaResumos.values()],
+    tarefas,
   }
 }

@@ -133,6 +133,18 @@ export interface SheetsConfig {
   autoRefresh: boolean;
 }
 
+export interface TarefaRelatorio {
+  colaborador: string;      // nome limpo ex: "Evelyn Korber"
+  area: string;             // "Tráfego", "Mídia", etc.
+  clienteRaw: string;       // nome original no relatório ex: "Servopa Seminovos"
+  clienteCanônico: string;  // após mapeamento ex: "Servopa"
+  isOverhead: boolean;
+  mesAno: string;           // "2026-01"
+  duracaoHoras: number;
+  custo: number;
+  descricao: string;
+}
+
 export interface ResumoColaboradorCliente {
   mesAno: string;
   colaborador: string;
@@ -171,4 +183,5 @@ export interface RelatorioImportado {
   totalColaboradores: number;
   clientesNaoMapeados: string[];
   resumos: ResumoColaboradorCliente[];
+  tarefas?: TarefaRelatorio[];
 }

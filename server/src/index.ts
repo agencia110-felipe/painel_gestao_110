@@ -5,8 +5,6 @@ import authRouter from './routes/auth'
 import equipeRouter from './routes/equipe'
 import fixosRouter from './routes/fixos'
 import variaveisRouter from './routes/variaveis'
-import { seedIfEmpty } from './seed'
-
 const app = express()
 const PORT = Number(process.env.PORT) || 3005
 
@@ -38,7 +36,6 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 async function start() {
   try {
-    await seedIfEmpty()
     app.listen(PORT, () => {
       console.log(`✅ Servidor rodando em http://localhost:${PORT}`)
     })

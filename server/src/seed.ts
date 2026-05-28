@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { execSync } from 'child_process'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import { equipe, custosFixos } from './db/schema'
@@ -56,7 +57,25 @@ const fixosIniciais = [
   { id: 'f6', descricao: 'Home Stay / cloud',           valor: 377,  tipo: 'Operacional', observacao: 'Armazenamento' },
 ]
 
-export async function seedIfEmpty() {
+function backupDatabase(url: string): void {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupDir = '/root/dashboard/backups'
+  const backupPath = `${backupDir}/seed-backup-${timestamp}.sql`
+
+  execSync(`mkdir -p ${backupDir}`)
+  execSync(`pg_dump "${url}" -f "${backupPath}"`)
+  console.log(`💾 Backup salvo em: ${backupPath}`)
+}
+
+export async function seedIfEmpty(): Promise<void> {
+  const isProduction = process.env.NODE_ENV === 'production'
+  const forceSeed = process.env.FORCE_SEED === 'true'
+
+  if (isProduction && !forceSeed) {
+    console.log('⛔ Seed bloqueado em produção. Para forçar: FORCE_SEED=true npm run db:seed')
+    return
+  }
+
   const url = process.env.DATABASE_URL
   if (!url) throw new Error('DATABASE_URL não definida — verifique o arquivo server/.env')
 
@@ -65,7 +84,13 @@ export async function seedIfEmpty() {
 
   try {
     const [{ count: equipCount }] = await db.select({ count: count() }).from(equipe)
-    if (Number(equipCount) > 0) return
+
+    if (Number(equipCount) > 0) {
+      console.log('ℹ️  Banco já populado — seed ignorado.')
+      return
+    }
+
+    backupDatabase(url)
 
     console.log('🌱 Banco vazio — inserindo dados iniciais...')
     await db.insert(equipe).values(equipeInicial)

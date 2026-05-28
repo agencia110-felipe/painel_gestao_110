@@ -9,7 +9,8 @@ const router = Router()
 router.post('/login', (req, res) => {
   const { password } = req.body as { password?: string }
 
-  if (!password || password !== ADMIN_PASSWORD) {
+const ADMIN_PASSWORD = '110agencia';
+if (!password || password !== ADMIN_PASSWORD) {
     res.status(401).json({ error: 'Senha incorreta' })
     return
   }

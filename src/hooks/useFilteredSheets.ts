@@ -3,7 +3,6 @@ import { useSheetsStore } from '@/store/useSheetsStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useRelatorioStore } from '@/store/useRelatorioStore'
-import { useIClipsStore } from '@/store/useIClipsStore'
 import {
   agregarClientes,
   agregarColaboradores,
@@ -27,14 +26,21 @@ import {
 } from '@/lib/calculations'
 import type { CustoClienteRelatorio } from '@/types'
 
-// Converte "Jan/2026" (formato Sheets) → "2026-01" (formato relatório)
+// Converte "Jan/2026" → "2026-01" e vice-versa
 const MESES_ABREV_REL: Record<string, string> = {
   Jan: '01', Fev: '02', Mar: '03', Abr: '04', Mai: '05', Jun: '06',
   Jul: '07', Ago: '08', Set: '09', Out: '10', Nov: '11', Dez: '12',
 }
+const REL_TO_ABREV: Record<string, string> = Object.fromEntries(
+  Object.entries(MESES_ABREV_REL).map(([k, v]) => [v, k])
+)
 function sheetsToRelMes(mesAno: string): string {
   const [abrev, ano] = mesAno.split('/')
   return `${ano}-${MESES_ABREV_REL[abrev] || '01'}`
+}
+function relMesToSheets(mesRel: string): string {
+  const [ano, mes] = mesRel.split('-')
+  return `${REL_TO_ABREV[mes] || mes}/${ano}`
 }
 
 export function useFilteredSheets() {
@@ -42,12 +48,14 @@ export function useFilteredSheets() {
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
   const { relatorios, mapeamentosColaboradores, colaboradoresIgnorados } = useRelatorioStore()
-  const { relatorio: iClipsRelatorio } = useIClipsStore()
+  // useIClipsStore é lido apenas para status (Header/Configurações); dados vêm de useRelatorioStore
 
-  const todosOsMeses = useMemo(
-    () => sortMesAno([...new Set(clientes.map(c => c.mesAno))]),
-    [clientes]
-  )
+  // Meses disponíveis: Sheets + meses cobertos pelos relatórios (iClips incluso)
+  const todosOsMeses = useMemo(() => {
+    const sheetsMonths = clientes.map(c => c.mesAno)
+    const relMeses = relatorios.flatMap(r => r.mesesCobertos).map(relMesToSheets)
+    return sortMesAno([...new Set([...sheetsMonths, ...relMeses])])
+  }, [clientes, relatorios])
 
   const mesesNoFiltro = useMemo(() => {
     if (modoFiltro === 'mensal') return [mesSelecionado].filter(m => todosOsMeses.includes(m))
@@ -115,21 +123,18 @@ export function useFilteredSheets() {
     [mesesNoFiltro]
   )
 
-  // Combina XLS armazenados com dados live do iClips.
-  // O iClips tem prioridade: para os meses que ele cobre, os XLS são excluídos
-  // (evita dupla contagem quando ambas as fontes existem para o mesmo período).
+  // iClips já está em relatorios (salvo via addRelatorio em useIClipsData).
+  // iClips tem prioridade: para os meses que cobre, exclui dados de XLS manuais.
   const todosRelatorios = useMemo(() => {
-    if (!iClipsRelatorio || iClipsRelatorio.mesesCobertos.length === 0) return relatorios
-    const mesesIClips = new Set(iClipsRelatorio.mesesCobertos)
-    const xlsFiltrados = relatorios
-      .map(r => ({
-        ...r,
-        resumos: r.resumos.filter(rs => !mesesIClips.has(rs.mesAno)),
-        mesesCobertos: r.mesesCobertos.filter(m => !mesesIClips.has(m)),
-      }))
-      .filter(r => r.resumos.length > 0)
-    return [...xlsFiltrados, iClipsRelatorio]
-  }, [relatorios, iClipsRelatorio])
+    const iclipsRel = relatorios.find(r => r.id === 'iclips-live')
+    if (!iclipsRel || iclipsRel.mesesCobertos.length === 0) return relatorios
+    const mesesIClips = new Set(iclipsRel.mesesCobertos)
+    return relatorios.map(r => {
+      if (r.id === 'iclips-live') return r
+      const resumosFiltrados = r.resumos.filter(rs => !mesesIClips.has(rs.mesAno))
+      return { ...r, resumos: resumosFiltrados, mesesCobertos: r.mesesCobertos.filter(m => !mesesIClips.has(m)) }
+    }).filter(r => r.resumos.length > 0 || r.id === 'iclips-live')
+  }, [relatorios])
 
   // Relatórios filtrados ao período selecionado
   const relatoriosFiltrados = useMemo(() => {
@@ -178,12 +183,20 @@ export function useFilteredSheets() {
     return [...naoEncontrados]
   }, [relatoriosFiltrados, custoHoraMapa, colaboradoresIgnorados])
 
-  // Custo XLS (direto + overhead do relatório) por cliente, no período filtrado.
-  // Usa custo/hora do store — não o custo líquido exportado pelo iClips.
+  // Custo real por cliente via relatório (iClips + XLS).
+  // Usa custo/hora do store — ignora employeeHourlyCost do iClips.
+  // Inclui clientes presentes no iClips mesmo sem dados na aba Sheets (ex: mês mais recente).
   const custoXLSPorCliente = useMemo(() => {
     const mapa = new Map<string, CustoClienteRelatorio>()
     if (relatoriosFiltrados.length === 0) return mapa
-    const clientesUnicos = [...new Set(clientesFiltrados.map(c => c.cliente))]
+
+    const clientesSheets = clientesFiltrados.map(c => c.cliente)
+    const clientesRelatorio = relatoriosFiltrados
+      .flatMap(r => r.resumos)
+      .filter(rs => !rs.isOverhead && rs.clienteCanônico !== '__NAO_MAPEADO__')
+      .map(rs => rs.clienteCanônico)
+    const clientesUnicos = [...new Set([...clientesSheets, ...clientesRelatorio])]
+
     for (const nome of clientesUnicos) {
       const info = calcCustoClienteRelatorio(nome, null, relatoriosFiltrados, custoHoraMapa, custoHoraMedia)
       if (info.horasTotal > 0) mapa.set(nome, info)

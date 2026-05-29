@@ -39,6 +39,13 @@ export const useRelatorioStore = create<RelatorioStore>()(
       addRelatorio: (r) => {
         // Strip tarefas before persisting — can be 15k+ items per quarter
         const { tarefas: _, ...semTarefas } = r
+        // Deduplication: ID takes priority (iClips live uses 'iclips-live' — always replace)
+        const porId = get().relatorios.find(x => x.id === semTarefas.id)
+        if (porId) {
+          set(s => ({ relatorios: s.relatorios.map(x => x.id === semTarefas.id ? semTarefas : x) }))
+          return
+        }
+        // XLS imports: deduplicate by nomeArquivo + periodoInicio
         const existe = get().relatorios.find(
           x => x.nomeArquivo === semTarefas.nomeArquivo && x.periodoInicio === semTarefas.periodoInicio
         )

@@ -2,8 +2,8 @@ import { Menu, RefreshCw, CheckCircle, AlertCircle, Calendar, CalendarRange } fr
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useGoogleSheets } from '@/hooks/useGoogleSheets'
 import { useIClipsData } from '@/hooks/useIClipsData'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { mockClientes } from '@/lib/mockData'
-import { sortMesAno } from '@/lib/aggregation'
 
 interface HeaderProps {
   onMenuClick: () => void
@@ -20,8 +20,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
   } = useSheetsStore()
   const { refetch } = useGoogleSheets()
   const { refetch: refetchIClips } = useIClipsData()
-
-  const mesesDisponiveis = sortMesAno([...new Set(clientes.map(c => c.mesAno))])
+  const { todosOsMeses: mesesDisponiveis } = useFilteredSheets()
 
   const syncAgo = lastSync
     ? Math.floor((Date.now() - lastSync.getTime()) / 60000)

@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useIClipsStore } from '@/store/useIClipsStore'
+import { useRelatorioStore } from '@/store/useRelatorioStore'
 import { mapearCliente } from '@/lib/parseRelatorio'
 import type { ResumoColaboradorCliente } from '@/types'
 
@@ -53,6 +54,7 @@ function extrairMesAno(dataStr: string, periodoStr: string): string {
 export function useIClipsData() {
   const { sheets } = useConfigStore()
   const { setRelatorio, setLoading, setError, setLastSync } = useIClipsStore()
+  const { addRelatorio } = useRelatorioStore()
 
   const fetchIClips = useCallback(async () => {
     const { iClipsSpreadsheetId, apiKey } = sheets
@@ -151,7 +153,7 @@ export function useIClipsData() {
       const resumos = [...mapaResumos.values()]
       const mesesCobertos = [...new Set(resumos.map(r => r.mesAno))].sort()
 
-      setRelatorio({
+      const relatorio = {
         id: 'iclips-live',
         nomeArquivo: 'iClips (Google Sheets)',
         periodoInicio: mesesCobertos[0] ?? '',
@@ -162,7 +164,11 @@ export function useIClipsData() {
         totalColaboradores: colaboradoresVistos.size,
         clientesNaoMapeados: [...clientesNaoMapeados],
         resumos,
-      })
+      }
+      // Salvar no store persistido (fonte universal lida por todos os componentes)
+      addRelatorio(relatorio)
+      // Salvar também no store em memória (status de sync no Header e Configurações)
+      setRelatorio(relatorio)
       setLastSync(new Date())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao buscar dados do iClips')
@@ -170,7 +176,7 @@ export function useIClipsData() {
     } finally {
       setLoading(false)
     }
-  }, [sheets.iClipsSpreadsheetId, sheets.apiKey, setRelatorio, setLoading, setError, setLastSync])
+  }, [sheets.iClipsSpreadsheetId, sheets.apiKey, setRelatorio, setLoading, setError, setLastSync, addRelatorio])
 
   useEffect(() => {
     fetchIClips()

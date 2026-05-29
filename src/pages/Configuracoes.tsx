@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, AlertTriangle, FileText, Zap, X, Link2 } from 'lucide-react'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { useConfigStore } from '@/store/useConfigStore'
@@ -7,7 +7,7 @@ import { useSheetsStore } from '@/store/useSheetsStore'
 import { useRelatorioStore } from '@/store/useRelatorioStore'
 import { useIClipsStore } from '@/store/useIClipsStore'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
-import { parseRelatorioXLS, MAPA_CLIENTES_RELATORIO } from '@/lib/parseRelatorio'
+import { MAPA_CLIENTES_RELATORIO } from '@/lib/parseRelatorio'
 import { normalizarNome } from '@/lib/calculations'
 import type { ConfigParams } from '@/types'
 
@@ -67,10 +67,7 @@ export function Configuracoes() {
   const [testMsg, setTestMsg] = useState('')
   const [showRaw, setShowRaw] = useState(false)
   const [clearConfirm, setClearConfirm] = useState(false)
-  const [importandoRelatorio, setImportandoRelatorio] = useState(false)
-  const [relatorioErro, setRelatorioErro] = useState('')
   const [novosMapeamentos, setNovosMapeamentos] = useState<Record<string, string>>({})
-  const relatorioInputRef = useRef<HTMLInputElement>(null)
 
   async function handleTestConnection() {
     if (!sheets.spreadsheetId || !sheets.apiKey) {
@@ -141,23 +138,6 @@ export function Configuracoes() {
     localStorage.removeItem('agencia110-config')
     setClearConfirm(false)
     window.location.reload()
-  }
-
-  async function handleImportRelatorio(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImportandoRelatorio(true)
-    setRelatorioErro('')
-    try {
-      const resultado = await parseRelatorioXLS(file, mapeamentoCustom)
-      addRelatorio(resultado)
-    } catch (err) {
-      setRelatorioErro('Erro ao processar o arquivo. Verifique se é um .xls ou .xlsx válido.')
-      console.error(err)
-    } finally {
-      setImportandoRelatorio(false)
-      e.target.value = ''
-    }
   }
 
   function formatMesRelatorio(mes: string): string {
@@ -395,51 +375,40 @@ export function Configuracoes() {
           </div>
         </section>
 
-        {/* ── Seção 4: Relatórios de Atividade ── */}
+        {/* ── Seção 4: Dados de Tarefas (iClips) ── */}
         <section className="bg-white rounded-xl border border-border p-5">
-          <h2 className="font-semibold text-neutral mb-1">Relatórios de Atividade</h2>
+          <h2 className="font-semibold text-neutral mb-1">Dados de Tarefas (iClips)</h2>
           <p className="text-xs text-muted mb-4">
-            Importe o relatório XLS/XLSX exportado da ferramenta de gestão de tarefas para calcular o custo real por cliente.
+            Horas e custos por cliente sincronizados automaticamente via Google Sheets.
+            Configure o Spreadsheet ID do iClips acima e clique em Atualizar.
           </p>
 
-          <div className="flex items-center gap-3 mb-5">
-            <label className={`flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium transition-colors cursor-pointer ${importandoRelatorio ? 'opacity-60 pointer-events-none' : 'hover:bg-primary/90'}`}>
-              <Upload size={14} />
-              {importandoRelatorio ? 'Processando...' : 'Importar relatório (.xls/.xlsx)'}
-              <input
-                ref={relatorioInputRef}
-                type="file"
-                accept=".xls,.xlsx"
-                className="hidden"
-                onChange={handleImportRelatorio}
-                disabled={importandoRelatorio}
-              />
-            </label>
-            {relatorioErro && (
-              <span className="text-xs text-danger flex items-center gap-1">
-                <XCircle size={12} /> {relatorioErro}
-              </span>
-            )}
-          </div>
-
-          {relatorios.length === 0 ? (
-            <p className="text-sm text-muted">Nenhum relatório importado.</p>
+          {relatorios.filter(r => r.id !== 'iclips-live').length === 0 && relatorios.find(r => r.id === 'iclips-live') == null ? (
+            <div className="flex items-center gap-2 text-sm text-muted bg-bg-page rounded-lg px-4 py-3 border border-border">
+              <AlertTriangle size={14} className="text-warning shrink-0" />
+              Nenhum dado disponível. Verifique o Spreadsheet ID do iClips acima.
+            </div>
           ) : (
-            <div className="space-y-2 mb-4">
+            <div className="space-y-2">
               {relatorios.map(r => {
                 const inicio = formatMesRelatorio(r.periodoInicio)
                 const fim = r.periodoFim !== r.periodoInicio ? `–${formatMesRelatorio(r.periodoFim)}` : ''
                 const dataImport = new Date(r.dataImport).toLocaleDateString('pt-BR')
+                const isIClips = r.id === 'iclips-live'
                 return (
                   <div key={r.id} className="flex items-center justify-between bg-bg-page rounded-lg px-4 py-3 border border-border">
                     <div className="flex items-center gap-3">
-                      <FileText size={16} className="text-primary shrink-0" />
+                      {isIClips
+                        ? <Zap size={16} className="text-primary shrink-0" />
+                        : <FileText size={16} className="text-muted shrink-0" />
+                      }
                       <div>
                         <p className="text-sm font-medium text-neutral">
                           {inicio}{fim} · {r.totalColaboradores} colaboradores · {r.totalTarefas.toLocaleString('pt-BR')} tarefas
+                          {isIClips && <span className="ml-2 text-xs text-primary font-normal">iClips (automático)</span>}
                         </p>
                         <p className="text-xs text-muted">
-                          {r.nomeArquivo} · Importado em {dataImport}
+                          Sincronizado em {dataImport}
                           {r.clientesNaoMapeados.length > 0 && (
                             <span className="text-warning ml-2">
                               · {r.clientesNaoMapeados.length} cliente(s) sem mapeamento
@@ -448,12 +417,15 @@ export function Configuracoes() {
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeRelatorio(r.id)}
-                      className="text-muted hover:text-danger transition-colors ml-4 shrink-0"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {!isIClips && (
+                      <button
+                        onClick={() => removeRelatorio(r.id)}
+                        title="Remover dados importados manualmente"
+                        className="text-muted hover:text-danger transition-colors ml-4 shrink-0"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -461,11 +433,11 @@ export function Configuracoes() {
           )}
 
           {clientesSemMapeamento.length > 0 && (
-            <div className="border border-warning/40 rounded-xl p-4 bg-warning-bg">
+            <div className="mt-4 border border-warning/40 rounded-xl p-4 bg-warning-bg">
               <div className="flex items-center gap-2 mb-3">
                 <AlertTriangle size={14} className="text-warning" />
                 <span className="text-sm font-medium text-warning">
-                  {clientesSemMapeamento.length} cliente(s) sem mapeamento — associe ao cliente do sistema
+                  {clientesSemMapeamento.length} cliente(s) do iClips sem mapeamento — associe ao cliente do sistema
                 </span>
               </div>
               <div className="space-y-2">

@@ -423,12 +423,72 @@ export interface DREResult {
   margemLiquida: number
 }
 
+// ─── Helpers de custo/hora via store (substitui employeeHourlyCost do iClips) ─
+
+export function calcCustoHoraMembro(
+  membro: Pick<EquipeMembro, 'salario' | 'cargaHorariaMes' | 'alocacoes'>,
+  horasMes: number,
+  aproveitamentoPct: number
+): number {
+  const carga = membro.cargaHorariaMes ?? horasMes
+  const horasFat = carga * aproveitamentoPct * membroFaturavelPct(membro)
+  if (horasFat === 0) return 0
+  return membro.salario / horasFat
+}
+
+// Mapa nome-normalizado → custo/hora calculado do store (só membros ativos com salário)
+export function buildCustoHoraMapa(
+  equipe: EquipeMembro[],
+  horasMes: number,
+  aproveitamentoPct: number
+): Map<string, number> {
+  const mapa = new Map<string, number>()
+  equipe
+    .filter(m => m.status === 'Ativo' && m.salario > 0)
+    .forEach(m => {
+      const custoH = calcCustoHoraMembro(m, horasMes, aproveitamentoPct)
+      const nomeNorm = m.nome.trim().toLowerCase()
+      mapa.set(nomeNorm, custoH)
+      // Fallback primeiro+último nome (tolera nomes do meio distintos entre iClips e store)
+      const partes = m.nome.trim().split(/\s+/)
+      if (partes.length >= 2) {
+        const abrev = `${partes[0]} ${partes[partes.length - 1]}`.toLowerCase()
+        if (!mapa.has(abrev)) mapa.set(abrev, custoH)
+      }
+    })
+  return mapa
+}
+
+// Busca custo/hora tolerando variações de nome (ex: "Matheus Valle" vs "Matheus Santos Valle")
+export function buscarCustoHoraPorNome(
+  mapa: Map<string, number>,
+  nome: string
+): number | undefined {
+  const nomeNorm = nome.trim().toLowerCase()
+  if (mapa.has(nomeNorm)) return mapa.get(nomeNorm)
+  const partes = nomeNorm.split(/\s+/)
+  if (partes.length < 2) return undefined
+  for (const [nomeStore, custoH] of mapa) {
+    const partesStore = nomeStore.split(/\s+/)
+    if (
+      partesStore[0] === partes[0] &&
+      (nomeStore.includes(partes[partes.length - 1]) ||
+       nomeNorm.includes(partesStore[partesStore.length - 1]))
+    ) {
+      return custoH
+    }
+  }
+  return undefined
+}
+
 // ─── Custo direto por cliente (via relatório de atividades) ──────────────────
 
 export function calcCustoClienteRelatorio(
   cliente: string,
   mesAno: string | null,
-  relatorios: RelatorioImportado[]
+  relatorios: RelatorioImportado[],
+  custoHoraMapa?: Map<string, number>,
+  custoHoraMedia?: number,
 ): CustoClienteRelatorio {
   const resumos = relatorios.flatMap(r => r.resumos).filter(r =>
     mesAno ? r.mesAno === mesAno : true
@@ -440,11 +500,19 @@ export function calcCustoClienteRelatorio(
     r => !r.isOverhead && r.clienteCanônico !== '__NAO_MAPEADO__'
   )
 
+  // Quando mapa disponível, calcula custo real (horas × custo/hora do store)
+  // em vez de usar o custo líquido exportado pelo iClips
+  function getCusto(r: { colaborador: string; horasTotais: number; custoTotal: number }): number {
+    if (!custoHoraMapa) return r.custoTotal
+    const custoH = buscarCustoHoraPorNome(custoHoraMapa, r.colaborador.trim()) ?? custoHoraMedia ?? 0
+    return r.horasTotais * custoH
+  }
+
   const horasDiretas = diretos.reduce((a, r) => a + r.horasTotais, 0)
-  const custoDireto  = diretos.reduce((a, r) => a + r.custoTotal, 0)
+  const custoDireto  = diretos.reduce((a, r) => a + getCusto(r), 0)
   const totalHorasTodosClientes = todosClientes.reduce((a, r) => a + r.horasTotais, 0)
   const totalHorasOverhead = overheads.reduce((a, r) => a + r.horasTotais, 0)
-  const totalCustoOverhead = overheads.reduce((a, r) => a + r.custoTotal, 0)
+  const totalCustoOverhead = overheads.reduce((a, r) => a + getCusto(r), 0)
 
   const proporcao = totalHorasTodosClientes > 0 ? horasDiretas / totalHorasTodosClientes : 0
   const horasOverhead = totalHorasOverhead * proporcao
@@ -452,13 +520,11 @@ export function calcCustoClienteRelatorio(
 
   const mapaColabs = new Map<string, { horas: number; custo: number }>()
   diretos.forEach(r => {
-    const nome = r.colaborador
-      .replace(/\s+(Tráfego|Gestão|Atendimento|Criação|Redação|Revisão|Mídia|Inbound|Financeiro|Monitoramento)\s*$/i, '')
-      .trim()
+    const nome = r.colaborador.trim()
     if (!mapaColabs.has(nome)) mapaColabs.set(nome, { horas: 0, custo: 0 })
     const c = mapaColabs.get(nome)!
     c.horas += r.horasTotais
-    c.custo += r.custoTotal
+    c.custo += getCusto(r)
   })
 
   return {
@@ -478,32 +544,6 @@ export function calcCustoClienteRelatorio(
         custoHora: v.horas > 0 ? v.custo / v.horas : 0,
       }))
       .sort((a, b) => b.horas - a.horas),
-  }
-}
-
-export function calcMargemClienteComRelatorio(
-  receitaPeriodo: number,
-  custoClienteRelatorio: CustoClienteRelatorio,
-  custosAdicionaisPeriodo: number,
-  horasTotalTodosClientes: number
-): {
-  margemContribuicao: number
-  margemLiquida: number
-  lucroContribuicao: number
-  lucroLiquido: number
-} {
-  const proporcaoHoras = horasTotalTodosClientes > 0
-    ? custoClienteRelatorio.horasDiretas / horasTotalTodosClientes
-    : 0
-  const custosAdicionaisCliente = custosAdicionaisPeriodo * proporcaoHoras
-  const custoTotalCliente = custoClienteRelatorio.custoTotal + custosAdicionaisCliente
-  const lucroContribuicao = receitaPeriodo - custoClienteRelatorio.custoDireto
-  const lucroLiquido = receitaPeriodo - custoTotalCliente
-  return {
-    margemContribuicao: receitaPeriodo > 0 ? lucroContribuicao / receitaPeriodo : 0,
-    margemLiquida: receitaPeriodo > 0 ? lucroLiquido / receitaPeriodo : 0,
-    lucroContribuicao,
-    lucroLiquido,
   }
 }
 

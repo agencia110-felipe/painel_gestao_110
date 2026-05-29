@@ -182,16 +182,6 @@ export async function parseRelatorioXLS(
     raw: false,
   })
 
-  // ---- DEBUG: estrutura bruta do arquivo ----
-  console.group('[parseRelatorio] Diagnóstico de estrutura')
-  console.log('Total de linhas:', rows.length)
-  console.log('Linha 0 (header?):', rows[0])
-  console.log('Linha 1:', rows[1])
-  console.log('Linha 2:', rows[2])
-  console.log('Linha 3:', rows[3])
-  console.groupEnd()
-  // -------------------------------------------
-
   const mapaResumos = new Map<string, ResumoColaboradorCliente>()
   const clientesNaoMapeados = new Set<string>()
   const tarefas: TarefaRelatorio[] = []
@@ -199,7 +189,6 @@ export async function parseRelatorioXLS(
   let areaAtual = ''
   let totalTarefas = 0
   const colaboradoresVistos = new Set<string>()
-  let debugTarefaCount = 0
 
   for (const row of rows) {
     const col0 = decodeHTMLEntities((row[0] as string | null)?.trim() ?? '')
@@ -233,22 +222,6 @@ export async function parseRelatorioXLS(
     // Tipo C: linha de tarefa
     if (col0 !== '' && col3 !== '' && col4 !== '' && colaboradorAtual !== '') {
       const clienteRaw = extrairCliente(col0, col1, col2)
-
-      // ---- DEBUG: primeiras 10 tarefas ----
-      if (debugTarefaCount < 10) {
-        console.group(`[parseRelatorio] Tarefa #${debugTarefaCount + 1}`)
-        console.log('col0 (desc):', JSON.stringify(col0))
-        console.log('col1:', JSON.stringify(col1))
-        console.log('col2:', JSON.stringify(col2))
-        console.log('col3 (início):', col3)
-        console.log('col5 (dur):', col5)
-        console.log('col6 (custo):', col6)
-        console.log('split " - ":', col0.split(' - '))
-        console.log('→ clienteRaw extraído:', JSON.stringify(clienteRaw))
-        console.groupEnd()
-        debugTarefaCount++
-      }
-      // --------------------------------------
 
       const clienteCanônico = mapearCliente(clienteRaw, mapeamentoCustom)
 
@@ -298,26 +271,6 @@ export async function parseRelatorioXLS(
       r.nTarefas += 1
     }
   }
-
-  // ---- DEBUG: resumo dos clientes encontrados ----
-  const clientesResumo: Record<string, { horas: number; custo: number }> = {}
-  for (const r of mapaResumos.values()) {
-    const k = r.clienteCanônico === '__NAO_MAPEADO__' ? `[NÃO MAPEADO] ${r.clienteRaw}` : r.clienteCanônico
-    if (!clientesResumo[k]) clientesResumo[k] = { horas: 0, custo: 0 }
-    clientesResumo[k].horas += r.horasTotais
-    clientesResumo[k].custo += r.custoTotal
-  }
-  console.group('[parseRelatorio] Clientes encontrados')
-  console.table(
-    Object.entries(clientesResumo).map(([cliente, d]) => ({
-      Cliente: cliente,
-      Horas: Math.round(d.horas * 100) / 100,
-      Custo: Math.round(d.custo * 100) / 100,
-    }))
-  )
-  console.log('Não mapeados:', [...clientesNaoMapeados])
-  console.groupEnd()
-  // -------------------------------------------------
 
   const mesesCobertos = [...new Set([...mapaResumos.values()].map(r => r.mesAno))].sort()
 

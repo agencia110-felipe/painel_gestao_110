@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useCustosStore } from '@/store/useCustosStore'
+import { useConfigStore } from '@/store/useConfigStore'
 import { useRelatorioStore } from '@/store/useRelatorioStore'
 import {
   agregarClientes,
@@ -15,8 +16,11 @@ import {
   calcTotalFixos,
   calcTotalVariaveis,
   calcTotalComissoes,
+  calcHorasFaturaveisTotal,
   calcCustoClienteRelatorio,
   calcCustoTotalClienteComRelatorio,
+  buildCustoHoraMapa,
+  buscarCustoHoraPorNome,
   type CustoClienteIntegrado,
 } from '@/lib/calculations'
 import type { CustoClienteRelatorio } from '@/types'
@@ -34,6 +38,7 @@ function sheetsToRelMes(mesAno: string): string {
 export function useFilteredSheets() {
   const { clientes, colaboradores, modoFiltro, mesSelecionado, mesInicio, mesFim } = useSheetsStore()
   const { equipe, fixos, variaveis } = useCustosStore()
+  const { params } = useConfigStore()
   const { relatorios } = useRelatorioStore()
 
   const todosOsMeses = useMemo(
@@ -116,17 +121,45 @@ export function useFilteredSheets() {
       .filter(r => r.resumos.length > 0)
   }, [relatorios, mesesRelatorioNoFiltro])
 
-  // Custo XLS (direto + overhead do relatório) por cliente, no período filtrado
+  // Mapa nome → custo/hora calculado do store (ignora employeeHourlyCost do iClips)
+  const custoHoraMapa = useMemo(
+    () => buildCustoHoraMapa(equipe, params.horasMes, params.aproveitamentoPct),
+    [equipe, params.horasMes, params.aproveitamentoPct]
+  )
+
+  // Custo/hora médio da empresa como fallback para colaboradores sem cadastro no store
+  const custoHoraMedia = useMemo(() => {
+    const horasFat = calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct)
+    return horasFat > 0 ? custoMensal / horasFat : 0
+  }, [equipe, params.horasMes, params.aproveitamentoPct, custoMensal])
+
+  // Colaboradores presentes no relatório mas sem cadastro no store (usam custo médio)
+  const naoEncontradosRelatorio = useMemo(() => {
+    if (relatoriosFiltrados.length === 0) return []
+    const naoEncontrados = new Set<string>()
+    for (const rel of relatoriosFiltrados) {
+      for (const resumo of rel.resumos) {
+        if (resumo.isOverhead || resumo.clienteCanônico === '__NAO_MAPEADO__') continue
+        if (!buscarCustoHoraPorNome(custoHoraMapa, resumo.colaborador.trim())) {
+          naoEncontrados.add(resumo.colaborador.trim())
+        }
+      }
+    }
+    return [...naoEncontrados]
+  }, [relatoriosFiltrados, custoHoraMapa])
+
+  // Custo XLS (direto + overhead do relatório) por cliente, no período filtrado.
+  // Usa custo/hora do store — não o custo líquido exportado pelo iClips.
   const custoXLSPorCliente = useMemo(() => {
     const mapa = new Map<string, CustoClienteRelatorio>()
     if (relatoriosFiltrados.length === 0) return mapa
     const clientesUnicos = [...new Set(clientesFiltrados.map(c => c.cliente))]
     for (const nome of clientesUnicos) {
-      const info = calcCustoClienteRelatorio(nome, null, relatoriosFiltrados)
+      const info = calcCustoClienteRelatorio(nome, null, relatoriosFiltrados, custoHoraMapa, custoHoraMedia)
       if (info.horasTotal > 0) mapa.set(nome, info)
     }
     return mapa
-  }, [relatoriosFiltrados, clientesFiltrados])
+  }, [relatoriosFiltrados, clientesFiltrados, custoHoraMapa, custoHoraMedia])
 
   // Totais XLS para calcular o pool de custos adicionais
   const totalXLSAllClients = useMemo(() => {
@@ -177,5 +210,6 @@ export function useFilteredSheets() {
     custoIntegradoPorCliente,
     totalXLSAllClients,
     temRelatorioNoPeriodo,
+    naoEncontradosRelatorio,
   }
 }

@@ -67,7 +67,21 @@ export function useIClipsData() {
     setError(null)
 
     try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${iClipsSpreadsheetId}/values/A:Z?key=${apiKey}`
+      // Etapa 1: descobre o nome da aba pelo gid (mais estável que assumir a ordem)
+      const ICLIPS_GID = 775283929
+      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${iClipsSpreadsheetId}?key=${apiKey}&fields=sheets.properties`
+      const metaRes = await fetch(metaUrl)
+      if (!metaRes.ok) {
+        const metaData = await metaRes.json().catch(() => ({}))
+        throw new Error(metaData.error?.message || `Erro ao ler metadados HTTP ${metaRes.status}`)
+      }
+      const metaJson = await metaRes.json()
+      const sheets_list: { properties: { title: string; sheetId: number } }[] = metaJson.sheets ?? []
+      const abaAlvo = sheets_list.find(s => s.properties.sheetId === ICLIPS_GID)
+      const nomeAba = abaAlvo?.properties.title ?? sheets_list[0]?.properties.title ?? 'Sheet1'
+
+      // Etapa 2: busca os valores da aba correta
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${iClipsSpreadsheetId}/values/${encodeURIComponent(nomeAba)}?key=${apiKey}`
       const res = await fetch(url)
 
       if (!res.ok) {

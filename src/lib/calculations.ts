@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   EquipeMembro,
   Alocacao,
   CustoFixo,
@@ -437,7 +437,7 @@ export function calcCustoHoraMembro(
 }
 
 // Normaliza nome para comparação: remove acentos, espaços redundantes e caixa
-function normalizarNome(nome: string): string {
+export function normalizarNome(nome: string): string {
   return nome
     .trim()
     .toLowerCase()

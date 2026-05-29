@@ -22,6 +22,7 @@ import {
   calcCustoTotalClienteComRelatorio,
   buildCustoHoraMapa,
   buscarCustoHoraPorNome,
+  normalizarNome,
   type CustoClienteIntegrado,
 } from '@/lib/calculations'
 import type { CustoClienteRelatorio } from '@/types'
@@ -40,7 +41,7 @@ export function useFilteredSheets() {
   const { clientes, colaboradores, modoFiltro, mesSelecionado, mesInicio, mesFim } = useSheetsStore()
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
-  const { relatorios } = useRelatorioStore()
+  const { relatorios, mapeamentosColaboradores, colaboradoresIgnorados } = useRelatorioStore()
   const { relatorio: iClipsRelatorio } = useIClipsStore()
 
   const todosOsMeses = useMemo(
@@ -139,11 +140,19 @@ export function useFilteredSheets() {
       .filter(r => r.resumos.length > 0)
   }, [todosRelatorios, mesesRelatorioNoFiltro])
 
-  // Mapa nome → custo/hora calculado do store (ignora employeeHourlyCost do iClips)
-  const custoHoraMapa = useMemo(
-    () => buildCustoHoraMapa(equipe, params.horasMes, params.aproveitamentoPct),
-    [equipe, params.horasMes, params.aproveitamentoPct]
-  )
+  // Mapa nome → custo/hora do store, augmentado com mapeamentos manuais do usuário.
+  // Exemplo: "giovana silva" → custo/hora da "Giovana" do store.
+  const custoHoraMapa = useMemo(() => {
+    const mapa = buildCustoHoraMapa(equipe, params.horasMes, params.aproveitamentoPct)
+    for (const { nomeIClips, nomeStore } of mapeamentosColaboradores) {
+      const custoH = mapa.get(normalizarNome(nomeStore))
+      if (custoH !== undefined) {
+        const chave = normalizarNome(nomeIClips)
+        if (!mapa.has(chave)) mapa.set(chave, custoH)
+      }
+    }
+    return mapa
+  }, [equipe, params.horasMes, params.aproveitamentoPct, mapeamentosColaboradores])
 
   // Custo/hora médio da empresa como fallback para colaboradores sem cadastro no store
   const custoHoraMedia = useMemo(() => {
@@ -151,20 +160,23 @@ export function useFilteredSheets() {
     return horasFat > 0 ? custoMensal / horasFat : 0
   }, [equipe, params.horasMes, params.aproveitamentoPct, custoMensal])
 
-  // Colaboradores presentes no relatório mas sem cadastro no store (usam custo médio)
+  // Colaboradores presentes no relatório mas sem custo no store (usam custo médio).
+  // Exclui os que foram marcados como ignorados pelo usuário.
   const naoEncontradosRelatorio = useMemo(() => {
     if (relatoriosFiltrados.length === 0) return []
+    const ignoradosSet = new Set(colaboradoresIgnorados)
     const naoEncontrados = new Set<string>()
     for (const rel of relatoriosFiltrados) {
       for (const resumo of rel.resumos) {
         if (resumo.isOverhead || resumo.clienteCanônico === '__NAO_MAPEADO__') continue
-        if (!buscarCustoHoraPorNome(custoHoraMapa, resumo.colaborador.trim())) {
-          naoEncontrados.add(resumo.colaborador.trim())
+        const nome = resumo.colaborador.trim()
+        if (!ignoradosSet.has(nome) && !buscarCustoHoraPorNome(custoHoraMapa, nome)) {
+          naoEncontrados.add(nome)
         }
       }
     }
     return [...naoEncontrados]
-  }, [relatoriosFiltrados, custoHoraMapa])
+  }, [relatoriosFiltrados, custoHoraMapa, colaboradoresIgnorados])
 
   // Custo XLS (direto + overhead do relatório) por cliente, no período filtrado.
   // Usa custo/hora do store — não o custo líquido exportado pelo iClips.

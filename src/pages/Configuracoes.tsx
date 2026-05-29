@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, AlertTriangle, FileText, Zap } from 'lucide-react'
+import { useState, useRef, useMemo, useEffect } from 'react'
+import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, AlertTriangle, FileText, Zap, X, Link2 } from 'lucide-react'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useCustosStore } from '@/store/useCustosStore'
@@ -8,15 +8,60 @@ import { useRelatorioStore } from '@/store/useRelatorioStore'
 import { useIClipsStore } from '@/store/useIClipsStore'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { parseRelatorioXLS, MAPA_CLIENTES_RELATORIO } from '@/lib/parseRelatorio'
+import { normalizarNome } from '@/lib/calculations'
 import type { ConfigParams } from '@/types'
 
 export function Configuracoes() {
   const { params, pacotes, sheets, setParam, resetParams, updatePacote, setSheetsConfig } = useConfigStore()
   const { equipe, fixos, variaveis, addMembro, addFixo, addVariavel, removeMembro, removeFixo, removeVariavel } = useCustosStore()
   const { clientes, lastSync, error } = useSheetsStore()
-  const { relatorios, mapeamentoCustom, addRelatorio, removeRelatorio, addMapeamento } = useRelatorioStore()
+  const {
+    relatorios, mapeamentoCustom,
+    mapeamentosColaboradores, colaboradoresIgnorados,
+    addRelatorio, removeRelatorio, addMapeamento,
+    addMapeamentoColaborador, removeMapeamentoColaborador,
+    addIgnorado, removeIgnorado,
+  } = useRelatorioStore()
   const { relatorio: iClipsRelatorio, loading: iClipsLoading, error: iClipsError, lastSync: iClipsSyncAt } = useIClipsStore()
   const { naoEncontradosRelatorio } = useFilteredSheets()
+
+  // Estado dos dropdowns da tabela de equivalência (nomeIClips → nomeStore selecionado)
+  const [selecoes, setSelecoes] = useState<Record<string, string>>({})
+
+  // Todos os colaboradores únicos do iClips (para calcular o total auto-mapeado)
+  const todosColabIClips = useMemo(() => {
+    if (!iClipsRelatorio) return []
+    return [...new Set(iClipsRelatorio.resumos.map(r => r.colaborador))]
+  }, [iClipsRelatorio])
+
+  // Sugestão automática: para cada colaborador pendente, buscar membro do store com mesmo primeiro nome
+  const sugestoesMap = useMemo(() => {
+    const mapa: Record<string, string> = {}
+    for (const nomeIClips of naoEncontradosRelatorio) {
+      const primeiroIClips = normalizarNome(nomeIClips).split(' ')[0]
+      const candidatos = equipe.filter(
+        m => m.status === 'Ativo' && normalizarNome(m.nome).split(' ')[0] === primeiroIClips
+      )
+      if (candidatos.length === 1) mapa[nomeIClips] = candidatos[0].nome
+    }
+    return mapa
+  }, [naoEncontradosRelatorio, equipe])
+
+  // Pré-preencher dropdowns com sugestões automáticas (não sobrescreve escolhas do usuário)
+  useEffect(() => {
+    setSelecoes(prev => {
+      const updates: Record<string, string> = {}
+      for (const [nomeIClips, sugestao] of Object.entries(sugestoesMap)) {
+        if (!prev[nomeIClips]) updates[nomeIClips] = sugestao
+      }
+      return Object.keys(updates).length > 0 ? { ...updates, ...prev } : prev
+    })
+  }, [sugestoesMap])
+
+  const autoCount = Math.max(
+    0,
+    todosColabIClips.length - naoEncontradosRelatorio.length - colaboradoresIgnorados.length
+  )
 
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [testMsg, setTestMsg] = useState('')
@@ -458,25 +503,164 @@ export function Configuracoes() {
           )}
         </section>
 
-        {/* ── Alerta: colaboradores iClips sem custo cadastrado ── */}
-        {naoEncontradosRelatorio.length > 0 && (
-          <section className="bg-white rounded-xl border border-warning/40 p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle size={15} className="text-warning shrink-0" />
-              <span className="text-sm font-medium text-warning">
-                {naoEncontradosRelatorio.length} colaborador(es) do iClips sem custo cadastrado na equipe
-              </span>
+        {/* ── Seção: Equivalência de Colaboradores ── */}
+        {iClipsRelatorio && (
+          <section className="bg-white rounded-xl border border-border p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Link2 size={15} className="text-primary" />
+              <h2 className="font-semibold text-neutral">Colaboradores — Equivalência de Nomes</h2>
             </div>
-            <p className="text-xs text-muted mb-3">
-              Usando custo/hora médio da empresa como estimativa. Para cálculos precisos, cadastre em <strong>Custos → Equipe</strong>.
+            <p className="text-xs text-muted mb-4">
+              Vincule nomes do iClips com os colaboradores cadastrados em Custos → Equipe.
+              Feito uma vez, o vínculo é salvo permanentemente.
             </p>
-            <div className="flex flex-wrap gap-2">
-              {naoEncontradosRelatorio.map(nome => (
-                <span key={nome} className="text-xs font-mono bg-warning/10 text-warning border border-warning/30 rounded px-2 py-1">
-                  {nome}
+
+            {/* Badges de resumo */}
+            <div className="flex flex-wrap gap-2 mb-5 text-xs">
+              {autoCount > 0 && (
+                <span className="flex items-center gap-1 bg-success-bg text-success border border-success/20 rounded-lg px-3 py-1.5">
+                  <CheckCircle size={11} /> {autoCount} mapeados automaticamente
                 </span>
-              ))}
+              )}
+              {mapeamentosColaboradores.length > 0 && (
+                <span className="flex items-center gap-1 bg-primary/10 text-primary border border-primary/20 rounded-lg px-3 py-1.5">
+                  <Link2 size={11} /> {mapeamentosColaboradores.length} vinculados manualmente
+                </span>
+              )}
+              {naoEncontradosRelatorio.length > 0 && (
+                <span className="flex items-center gap-1 bg-warning-bg text-warning border border-warning/20 rounded-lg px-3 py-1.5">
+                  <AlertTriangle size={11} /> {naoEncontradosRelatorio.length} aguardando vínculo
+                </span>
+              )}
+              {colaboradoresIgnorados.length > 0 && (
+                <span className="flex items-center gap-1 bg-neutral/10 text-muted border border-border rounded-lg px-3 py-1.5">
+                  — {colaboradoresIgnorados.length} ignorados
+                </span>
+              )}
+              {naoEncontradosRelatorio.length === 0 && todosColabIClips.length > 0 && (
+                <span className="flex items-center gap-1 bg-success-bg text-success border border-success/20 rounded-lg px-3 py-1.5">
+                  <CheckCircle size={11} /> Todos os colaboradores estão mapeados
+                </span>
+              )}
             </div>
+
+            {/* Tabela de pendentes */}
+            {naoEncontradosRelatorio.length > 0 && (
+              <div className="mb-6">
+                <p className="text-xs font-medium text-neutral mb-2">Aguardando vínculo manual:</p>
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-bg-page border-b border-border">
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Nome no iClips</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Colaborador no sistema</th>
+                        <th className="px-4 py-2.5"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {naoEncontradosRelatorio.map(nomeIClips => {
+                        const sugestao = sugestoesMap[nomeIClips]
+                        const temSugestao = Boolean(sugestao)
+                        return (
+                          <tr key={nomeIClips} className="border-b border-border last:border-0 hover:bg-bg-page/50">
+                            <td className="px-4 py-2.5">
+                              <span className="font-mono text-xs bg-bg-page border border-border rounded px-2 py-0.5">
+                                {nomeIClips}
+                              </span>
+                              {temSugestao && (
+                                <span className="ml-2 text-xs text-primary">★ sugestão automática</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <select
+                                value={selecoes[nomeIClips] || ''}
+                                onChange={e => setSelecoes(s => ({ ...s, [nomeIClips]: e.target.value }))}
+                                className="border border-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 w-full max-w-[260px]"
+                              >
+                                <option value="">Selecionar…</option>
+                                <option value="__IGNORAR__">— Ignorar (ex-colaborador)</option>
+                                {sugestao && (
+                                  <option value={sugestao}>★ {sugestao}</option>
+                                )}
+                                {equipe
+                                  .filter(m => m.status === 'Ativo' && m.nome !== sugestao)
+                                  .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+                                  .map(m => (
+                                    <option key={m.id} value={m.nome}>{m.nome}</option>
+                                  ))
+                                }
+                              </select>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <button
+                                disabled={!selecoes[nomeIClips]}
+                                onClick={() => {
+                                  const sel = selecoes[nomeIClips]
+                                  if (!sel) return
+                                  if (sel === '__IGNORAR__') {
+                                    addIgnorado(nomeIClips)
+                                  } else {
+                                    addMapeamentoColaborador(nomeIClips, sel)
+                                  }
+                                  setSelecoes(s => { const n = { ...s }; delete n[nomeIClips]; return n })
+                                }}
+                                className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                              >
+                                Confirmar
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Mapeamentos confirmados */}
+            {mapeamentosColaboradores.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-neutral mb-2">Mapeamentos confirmados:</p>
+                <div className="space-y-1.5">
+                  {mapeamentosColaboradores.map(({ nomeIClips, nomeStore }) => (
+                    <div key={nomeIClips} className="flex items-center gap-2 text-sm bg-bg-page rounded-lg px-3 py-2 border border-border">
+                      <span className="font-mono text-xs text-muted min-w-[140px]">{nomeIClips}</span>
+                      <span className="text-muted">→</span>
+                      <span className="font-medium text-neutral flex-1">{nomeStore}</span>
+                      <button
+                        onClick={() => removeMapeamentoColaborador(nomeIClips)}
+                        title="Desfazer vínculo"
+                        className="text-muted hover:text-danger transition-colors shrink-0"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Ignorados */}
+            {colaboradoresIgnorados.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-neutral mb-2">Ignorados (ex-colaboradores / freelancers):</p>
+                <div className="flex flex-wrap gap-2">
+                  {colaboradoresIgnorados.map(nome => (
+                    <span key={nome} className="flex items-center gap-1.5 text-xs bg-neutral/10 text-muted border border-border rounded-lg px-2.5 py-1">
+                      {nome}
+                      <button
+                        onClick={() => removeIgnorado(nome)}
+                        title="Deixar de ignorar"
+                        className="hover:text-danger transition-colors"
+                      >
+                        <X size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 

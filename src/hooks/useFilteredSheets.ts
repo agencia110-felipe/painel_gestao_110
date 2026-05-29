@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useConfigStore } from '@/store/useConfigStore'
@@ -209,6 +209,19 @@ export function useFilteredSheets() {
     })
     return mapa
   }, [custoXLSPorCliente, totalHorasXLSDiretas, custoTotal, totalXLSAllClients, clientesFiltrados])
+
+  // Loga colaboradores não encontrados no store para facilitar diagnóstico
+  useEffect(() => {
+    if (naoEncontradosRelatorio.length === 0) return
+    console.warn(
+      '[iClips] Colaboradores usando custo/hora médio (não encontrados no store):',
+      naoEncontradosRelatorio.map(n => `"${n}"`).join(', ')
+    )
+    console.warn(
+      `[iClips] Custo/hora médio aplicado: R$${custoHoraMedia.toFixed(0)}/h — ` +
+      'cadastre em Custos → Equipe para cálculo preciso.'
+    )
+  }, [naoEncontradosRelatorio, custoHoraMedia])
 
   // Há relatório (XLS ou iClips) com dados para o período atual
   const temRelatorioNoPeriodo = relatoriosFiltrados.length > 0

@@ -436,7 +436,19 @@ export function calcCustoHoraMembro(
   return membro.salario / horasFat
 }
 
-// Mapa nome-normalizado → custo/hora calculado do store (só membros ativos com salário)
+// Normaliza nome para comparação: remove acentos, espaços redundantes e caixa
+function normalizarNome(nome: string): string {
+  return nome
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')   // remove marcas de acento (NFD decompostas)
+    .replace(/[  -​  　]/g, ' ')  // unicode spaces → ASCII
+    .replace(/\s+/g, ' ')              // múltiplos espaços → um espaço
+    .trim()
+}
+
+// Mapa nome-normalizado → custo/hora (somente membros ativos com salário cadastrado)
 export function buildCustoHoraMapa(
   equipe: EquipeMembro[],
   horasMes: number,
@@ -447,37 +459,57 @@ export function buildCustoHoraMapa(
     .filter(m => m.status === 'Ativo' && m.salario > 0)
     .forEach(m => {
       const custoH = calcCustoHoraMembro(m, horasMes, aproveitamentoPct)
-      const nomeNorm = m.nome.trim().toLowerCase()
-      mapa.set(nomeNorm, custoH)
-      // Fallback primeiro+último nome (tolera nomes do meio distintos entre iClips e store)
-      const partes = m.nome.trim().split(/\s+/)
+      // Chave principal: nome completo normalizado
+      mapa.set(normalizarNome(m.nome), custoH)
+      // Chave abreviada: primeiro + último nome (tolera nomes do meio diferentes)
+      const partes = normalizarNome(m.nome).split(' ')
       if (partes.length >= 2) {
-        const abrev = `${partes[0]} ${partes[partes.length - 1]}`.toLowerCase()
+        const abrev = `${partes[0]} ${partes[partes.length - 1]}`
         if (!mapa.has(abrev)) mapa.set(abrev, custoH)
       }
     })
   return mapa
 }
 
-// Busca custo/hora tolerando variações de nome (ex: "Matheus Valle" vs "Matheus Santos Valle")
+// Busca custo/hora tolerando variações de nome entre iClips e store.
+// Regras (por ordem de prioridade):
+//   1. Exato (normalizado)
+//   2. Primeiro nome igual + pelo menos um sobrenome em comum
+//   3. iClips só tem primeiro nome → qualquer store com mesmo primeiro nome
+//   4. Store só tem primeiro nome → iClips começa com esse nome
 export function buscarCustoHoraPorNome(
   mapa: Map<string, number>,
   nome: string
 ): number | undefined {
-  const nomeNorm = nome.trim().toLowerCase()
-  if (mapa.has(nomeNorm)) return mapa.get(nomeNorm)
-  const partes = nomeNorm.split(/\s+/)
-  if (partes.length < 2) return undefined
+  const normIClips = normalizarNome(nome)
+
+  // 1. Match exato
+  if (mapa.has(normIClips)) return mapa.get(normIClips)
+
+  const partesIClips = normIClips.split(' ')
+  const primeiroIClips = partesIClips[0]
+
   for (const [nomeStore, custoH] of mapa) {
-    const partesStore = nomeStore.split(/\s+/)
-    if (
-      partesStore[0] === partes[0] &&
-      (nomeStore.includes(partes[partes.length - 1]) ||
-       nomeNorm.includes(partesStore[partesStore.length - 1]))
-    ) {
-      return custoH
-    }
+    const partesStore = nomeStore.split(' ')
+    const primeiroStore = partesStore[0]
+
+    if (primeiroStore !== primeiroIClips) continue
+
+    // 3. iClips tem só primeiro nome → match com qualquer store que comece igual
+    if (partesIClips.length === 1) return custoH
+
+    // 4. Store tem só primeiro nome → iClips começa com esse nome
+    if (partesStore.length === 1) return custoH
+
+    // 2. Verifica sobrenome em comum
+    const sobrenomesIClips = partesIClips.slice(1)
+    const sobrenomesStore  = partesStore.slice(1)
+    const temComum = sobrenomesIClips.some(si =>
+      sobrenomesStore.some(ss => ss === si || ss.startsWith(si) || si.startsWith(ss))
+    )
+    if (temComum) return custoH
   }
+
   return undefined
 }
 

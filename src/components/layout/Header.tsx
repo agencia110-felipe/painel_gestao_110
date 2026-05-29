@@ -1,6 +1,7 @@
 import { Menu, RefreshCw, CheckCircle, AlertCircle, Calendar, CalendarRange } from 'lucide-react'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useGoogleSheets } from '@/hooks/useGoogleSheets'
+import { useIClipsData } from '@/hooks/useIClipsData'
 import { mockClientes } from '@/lib/mockData'
 import { sortMesAno } from '@/lib/aggregation'
 
@@ -18,6 +19,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
     mesFim, setMesFim,
   } = useSheetsStore()
   const { refetch } = useGoogleSheets()
+  const { refetch: refetchIClips } = useIClipsData()
 
   const mesesDisponiveis = sortMesAno([...new Set(clientes.map(c => c.mesAno))])
 
@@ -113,7 +115,7 @@ export function Header({ onMenuClick, title }: HeaderProps) {
 
         {/* Atualizar */}
         <button
-          onClick={refetch}
+          onClick={() => { refetch(); refetchIClips() }}
           disabled={loading}
           className="flex items-center gap-1.5 bg-primary text-white text-xs px-3 py-1.5 rounded-lg hover:bg-primary-light transition-colors disabled:opacity-50"
         >

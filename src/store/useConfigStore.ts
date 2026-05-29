@@ -20,6 +20,7 @@ export const useConfigStore = create<ConfigStore>()(
       pacotes: PACOTES_BASE,
       sheets: {
         spreadsheetId: import.meta.env.VITE_SPREADSHEET_ID || '',
+        iClipsSpreadsheetId: import.meta.env.VITE_ICLIPS_SPREADSHEET_ID || '',
         apiKey: import.meta.env.VITE_SHEETS_API_KEY || '',
         autoRefresh: true,
       },

@@ -3,6 +3,7 @@ import { useSheetsStore } from '@/store/useSheetsStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useRelatorioStore } from '@/store/useRelatorioStore'
+import { useIClipsStore } from '@/store/useIClipsStore'
 import {
   agregarClientes,
   agregarColaboradores,
@@ -40,6 +41,7 @@ export function useFilteredSheets() {
   const { equipe, fixos, variaveis } = useCustosStore()
   const { params } = useConfigStore()
   const { relatorios } = useRelatorioStore()
+  const { relatorio: iClipsRelatorio } = useIClipsStore()
 
   const todosOsMeses = useMemo(
     () => sortMesAno([...new Set(clientes.map(c => c.mesAno))]),
@@ -112,14 +114,30 @@ export function useFilteredSheets() {
     [mesesNoFiltro]
   )
 
+  // Combina XLS armazenados com dados live do iClips.
+  // O iClips tem prioridade: para os meses que ele cobre, os XLS são excluídos
+  // (evita dupla contagem quando ambas as fontes existem para o mesmo período).
+  const todosRelatorios = useMemo(() => {
+    if (!iClipsRelatorio || iClipsRelatorio.mesesCobertos.length === 0) return relatorios
+    const mesesIClips = new Set(iClipsRelatorio.mesesCobertos)
+    const xlsFiltrados = relatorios
+      .map(r => ({
+        ...r,
+        resumos: r.resumos.filter(rs => !mesesIClips.has(rs.mesAno)),
+        mesesCobertos: r.mesesCobertos.filter(m => !mesesIClips.has(m)),
+      }))
+      .filter(r => r.resumos.length > 0)
+    return [...xlsFiltrados, iClipsRelatorio]
+  }, [relatorios, iClipsRelatorio])
+
   // Relatórios filtrados ao período selecionado
   const relatoriosFiltrados = useMemo(() => {
-    if (relatorios.length === 0) return []
-    if (mesesRelatorioNoFiltro.length === 0) return relatorios
-    return relatorios
+    if (todosRelatorios.length === 0) return []
+    if (mesesRelatorioNoFiltro.length === 0) return todosRelatorios
+    return todosRelatorios
       .map(r => ({ ...r, resumos: r.resumos.filter(rs => mesesRelatorioNoFiltro.includes(rs.mesAno)) }))
       .filter(r => r.resumos.length > 0)
-  }, [relatorios, mesesRelatorioNoFiltro])
+  }, [todosRelatorios, mesesRelatorioNoFiltro])
 
   // Mapa nome → custo/hora calculado do store (ignora employeeHourlyCost do iClips)
   const custoHoraMapa = useMemo(
@@ -192,8 +210,11 @@ export function useFilteredSheets() {
     return mapa
   }, [custoXLSPorCliente, totalHorasXLSDiretas, custoTotal, totalXLSAllClients, clientesFiltrados])
 
-  // Há relatório importado com dados para o período atual
+  // Há relatório (XLS ou iClips) com dados para o período atual
   const temRelatorioNoPeriodo = relatoriosFiltrados.length > 0
+
+  // iClips conectado e com dados no período selecionado
+  const temDadosIClips = relatoriosFiltrados.some(r => r.id === 'iclips-live')
 
   return {
     clientesFiltrados,
@@ -210,6 +231,7 @@ export function useFilteredSheets() {
     custoIntegradoPorCliente,
     totalXLSAllClients,
     temRelatorioNoPeriodo,
+    temDadosIClips,
     naoEncontradosRelatorio,
   }
 }

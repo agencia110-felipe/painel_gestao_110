@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
-import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, AlertTriangle, FileText } from 'lucide-react'
+import { CheckCircle, XCircle, RefreshCw, Download, Upload, Trash2, AlertTriangle, FileText, Zap } from 'lucide-react'
 import { PageWrapper } from '@/components/layout/PageWrapper'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useCustosStore } from '@/store/useCustosStore'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useRelatorioStore } from '@/store/useRelatorioStore'
+import { useIClipsStore } from '@/store/useIClipsStore'
+import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { parseRelatorioXLS, MAPA_CLIENTES_RELATORIO } from '@/lib/parseRelatorio'
 import type { ConfigParams } from '@/types'
 
@@ -13,6 +15,8 @@ export function Configuracoes() {
   const { equipe, fixos, variaveis, addMembro, addFixo, addVariavel, removeMembro, removeFixo, removeVariavel } = useCustosStore()
   const { clientes, lastSync, error } = useSheetsStore()
   const { relatorios, mapeamentoCustom, addRelatorio, removeRelatorio, addMapeamento } = useRelatorioStore()
+  const { relatorio: iClipsRelatorio, loading: iClipsLoading, error: iClipsError, lastSync: iClipsSyncAt } = useIClipsStore()
+  const { naoEncontradosRelatorio } = useFilteredSheets()
 
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [testMsg, setTestMsg] = useState('')
@@ -165,7 +169,7 @@ export function Configuracoes() {
           <h2 className="font-semibold text-neutral mb-4">Integração Google Sheets</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="text-xs text-muted mb-1 block">Spreadsheet ID</label>
+              <label className="text-xs text-muted mb-1 block">Spreadsheet ID (Receitas / Colaboradores)</label>
               <input
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 font-mono"
                 value={sheets.spreadsheetId}
@@ -183,6 +187,36 @@ export function Configuracoes() {
                 placeholder="AIza..."
               />
             </div>
+          </div>
+
+          {/* iClips Spreadsheet */}
+          <div className="mb-4">
+            <label className="text-xs text-muted mb-1 flex items-center gap-1.5 block">
+              <Zap size={11} className="text-primary" />
+              Spreadsheet ID do iClips (relatório de tarefas automático)
+            </label>
+            <input
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 font-mono"
+              value={sheets.iClipsSpreadsheetId}
+              onChange={e => setSheetsConfig({ iClipsSpreadsheetId: e.target.value })}
+              placeholder="12UxWnfp6n5CqTMXSGqA_fcU2k0JcwOS-ay0JAC09NmY"
+            />
+            {/* Status iClips */}
+            {sheets.iClipsSpreadsheetId && (
+              <div className="mt-2 flex items-center gap-2 text-xs">
+                {iClipsLoading ? (
+                  <><RefreshCw size={12} className="animate-spin text-primary" /><span className="text-muted">Buscando dados do iClips…</span></>
+                ) : iClipsError ? (
+                  <><XCircle size={12} className="text-danger" /><span className="text-danger">{iClipsError}</span></>
+                ) : iClipsRelatorio ? (
+                  <><CheckCircle size={12} className="text-success" />
+                  <span className="text-muted">
+                    {iClipsRelatorio.totalTarefas.toLocaleString('pt-BR')} tarefas · {iClipsRelatorio.totalColaboradores} colaboradores · {iClipsRelatorio.mesesCobertos.length} mês(es)
+                    {iClipsSyncAt && ` · sync ${iClipsSyncAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+                  </span></>
+                ) : null}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4 mb-4">
@@ -423,6 +457,28 @@ export function Configuracoes() {
             </div>
           )}
         </section>
+
+        {/* ── Alerta: colaboradores iClips sem custo cadastrado ── */}
+        {naoEncontradosRelatorio.length > 0 && (
+          <section className="bg-white rounded-xl border border-warning/40 p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={15} className="text-warning shrink-0" />
+              <span className="text-sm font-medium text-warning">
+                {naoEncontradosRelatorio.length} colaborador(es) do iClips sem custo cadastrado na equipe
+              </span>
+            </div>
+            <p className="text-xs text-muted mb-3">
+              Usando custo/hora médio da empresa como estimativa. Para cálculos precisos, cadastre em <strong>Custos → Equipe</strong>.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {naoEncontradosRelatorio.map(nome => (
+                <span key={nome} className="text-xs font-mono bg-warning/10 text-warning border border-warning/30 rounded px-2 py-1">
+                  {nome}
+                </span>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* ── Seção 5: Dados ── */}
         <section className="bg-white rounded-xl border border-border p-5">

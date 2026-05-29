@@ -129,6 +129,7 @@ export interface PacoteCalculado extends PacoteBase {
 
 export interface SheetsConfig {
   spreadsheetId: string;
+  iClipsSpreadsheetId: string;
   apiKey: string;
   autoRefresh: boolean;
 }

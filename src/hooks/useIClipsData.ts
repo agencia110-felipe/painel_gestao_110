@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react'
 import { useConfigStore } from '@/store/useConfigStore'
 import { useIClipsStore } from '@/store/useIClipsStore'
 import { useRelatorioStore } from '@/store/useRelatorioStore'
-import { mapearCliente } from '@/lib/parseRelatorio'
+import { resolverCliente } from '@/lib/parseRelatorio'
 import type { ResumoColaboradorCliente } from '@/types'
 
 // Remove sufixo de área do nome do colaborador (ex: "Matheus Valle Tráfego" → "Matheus Valle")
@@ -140,7 +140,13 @@ export function useIClipsData() {
         const colaborador = limparNomeColaborador(executorRaw)
         colaboradoresVistos.add(colaborador)
 
-        const clienteCanônico = mapearCliente(clienteRaw)
+        // Lê mapeamentos no momento do fetch para usar os vínculos mais recentes
+        const { mapeamentosClientes } = useRelatorioStore.getState()
+        const clienteCanônico = resolverCliente(clienteRaw, mapeamentosClientes)
+
+        // Tarefa marcada para ignorar — não conta nos cálculos
+        if (clienteCanônico === '__IGNORAR__') continue
+
         if (clienteCanônico === '__NAO_MAPEADO__') clientesNaoMapeados.add(clienteRaw)
         const isOverhead = clienteCanônico === '__OVERHEAD__'
 

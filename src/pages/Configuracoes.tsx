@@ -18,9 +18,11 @@ export function Configuracoes() {
   const {
     relatorios, mapeamentoCustom,
     mapeamentosColaboradores, colaboradoresIgnorados,
+    mapeamentosClientes,
     addRelatorio, removeRelatorio, addMapeamento,
     addMapeamentoColaborador, removeMapeamentoColaborador,
     addIgnorado, removeIgnorado,
+    addMapeamentoCliente, removeMapeamentoCliente,
   } = useRelatorioStore()
   const { relatorio: iClipsRelatorio, loading: iClipsLoading, error: iClipsError, lastSync: iClipsSyncAt } = useIClipsStore()
 
@@ -95,6 +97,7 @@ export function Configuracoes() {
   const [clearConfirm, setClearConfirm] = useState(false)
   const [novosMapeamentos, setNovosMapeamentos] = useState<Record<string, string>>({})
   const [expandirNaoMapeados, setExpandirNaoMapeados] = useState(false)
+  const [selClientes, setSelClientes] = useState<Record<string, string>>({})
 
   async function handleTestConnection() {
     if (!sheets.spreadsheetId || !sheets.apiKey) {
@@ -177,13 +180,59 @@ export function Configuracoes() {
     return `${MESES[m] || m}/${y}`
   }
 
-  // Collect all unmapped clients across all reports (excluding custom-mapped)
+  // Clientes sem mapeamento: excluir os que já foram vinculados via store ou mapeamentoCustom
   const clientesSemMapeamento = [...new Set(
-    relatorios.flatMap(r => r.clientesNaoMapeados.filter(c => !mapeamentoCustom[c]))
+    relatorios.flatMap(r => r.clientesNaoMapeados.filter(c =>
+      !mapeamentoCustom[c] && !mapeamentosClientes.some(m => m.nomeIClips === c)
+    ))
   )]
 
-  // All known canonical names for the mapping dropdown
-  const clientesCanônicos = [...new Set(Object.values(MAPA_CLIENTES_RELATORIO).filter(v => !v.startsWith('__')))]
+  // Nomes canônicos para o dropdown: combina Sheets + mapa fixo
+  const clientesCanônicos = useMemo(() => {
+    const fromSheets = clientes.map(c => c.cliente)
+    const fromMapa = Object.values(MAPA_CLIENTES_RELATORIO).filter(v => !v.startsWith('__'))
+    return [...new Set([...fromSheets, ...fromMapa])].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  }, [clientes])
+
+  // Pendentes de mapeamento (do relatorio completo, não filtrado por período)
+  const clientesPendentes = useMemo(() => {
+    const naoMapeados = iClipsRel?.clientesNaoMapeados ?? []
+    return naoMapeados.filter(nome => !mapeamentosClientes.some(m => m.nomeIClips === nome))
+  }, [iClipsRel, mapeamentosClientes])
+
+  // Sugestão automática: detecta padrões como "Audi - Servopa" → "Servopa"
+  // ou "PR - Bom Jesus Aldeia" → "Bom Jesus"
+  const sugestoesClientes = useMemo(() => {
+    const mapa: Record<string, string> = {}
+    for (const nomeIClips of clientesPendentes) {
+      const norm = nomeIClips.toLowerCase()
+      // Padrão "Marca/Região - Cliente" → extrair parte após " - "
+      const matchSufixo = norm.match(/^.+?\s+-\s+(.+)$/)
+      const sufixo = matchSufixo ? matchSufixo[1].trim() : norm
+      // Remover prefixo de estado (ex: "PR - ") → extrair só o nome
+      const matchSemEstado = sufixo.match(/^[a-z]{2}\s+-\s+(.+)$/)
+      const nomeChave = matchSemEstado ? matchSemEstado[1].trim() : sufixo
+      // Buscar cliente canônico que começa com a primeira palavra-chave
+      const primeiraChave = nomeChave.split(' ')[0]
+      const encontrado = clientesCanônicos.find(c =>
+        c.toLowerCase().startsWith(primeiraChave) ||
+        nomeChave.startsWith(c.toLowerCase())
+      )
+      if (encontrado) mapa[nomeIClips] = encontrado
+    }
+    return mapa
+  }, [clientesPendentes, clientesCanônicos])
+
+  // Pré-preencher dropdowns de clientes com sugestões automáticas
+  useEffect(() => {
+    setSelClientes(prev => {
+      const updates: Record<string, string> = {}
+      for (const [nome, sugestao] of Object.entries(sugestoesClientes)) {
+        if (!prev[nome]) updates[nome] = sugestao
+      }
+      return Object.keys(updates).length > 0 ? { ...updates, ...prev } : prev
+    })
+  }, [sugestoesClientes])
 
   const paramFields: { key: keyof ConfigParams; label: string; min: number; max: number; step: number; pct: boolean }[] = [
     { key: 'horasMes',              label: 'Horas/mês',                   min: 1,   max: 300, step: 1,   pct: false },
@@ -520,6 +569,129 @@ export function Configuracoes() {
             </div>
           )}
         </section>
+
+        {/* ── Seção: Mapeamento de Clientes ── */}
+        {(clientesPendentes.length > 0 || mapeamentosClientes.length > 0) && (
+          <section className="bg-white rounded-xl border border-border p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Link2 size={15} className="text-primary" />
+              <h2 className="font-semibold text-neutral">Clientes — Mapeamento de Nomes</h2>
+            </div>
+            <p className="text-xs text-muted mb-4">
+              Associe nomes do iClips aos clientes cadastrados. Feito uma vez, o vínculo é permanente.
+              Após salvar, clique em <strong>Atualizar</strong> para reprocessar os dados.
+            </p>
+
+            {/* Badges */}
+            <div className="flex flex-wrap gap-2 mb-4 text-xs">
+              {clientesPendentes.length > 0 && (
+                <span className="flex items-center gap-1 bg-warning-bg text-warning border border-warning/20 rounded-lg px-3 py-1.5">
+                  <AlertTriangle size={11} /> {clientesPendentes.length} aguardando vínculo
+                </span>
+              )}
+              {mapeamentosClientes.length > 0 && (
+                <span className="flex items-center gap-1 bg-primary/10 text-primary border border-primary/20 rounded-lg px-3 py-1.5">
+                  <Link2 size={11} /> {mapeamentosClientes.length} vinculados
+                </span>
+              )}
+              {clientesPendentes.length === 0 && mapeamentosClientes.length > 0 && (
+                <span className="flex items-center gap-1 bg-success-bg text-success border border-success/20 rounded-lg px-3 py-1.5">
+                  <CheckCircle size={11} /> Todos mapeados
+                </span>
+              )}
+            </div>
+
+            {/* Tabela de pendentes */}
+            {clientesPendentes.length > 0 && (
+              <div className="mb-5 overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-bg-page border-b border-border">
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Nome no iClips</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-muted">Cliente no sistema</th>
+                      <th className="px-4 py-2.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientesPendentes.map(nomeIClips => {
+                      const sugestao = sugestoesClientes[nomeIClips]
+                      return (
+                        <tr key={nomeIClips} className="border-b border-border last:border-0 hover:bg-bg-page/50">
+                          <td className="px-4 py-2.5">
+                            <span className="font-mono text-xs bg-bg-page border border-border rounded px-2 py-0.5">
+                              {nomeIClips}
+                            </span>
+                            {sugestao && <span className="ml-2 text-xs text-primary">★</span>}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <select
+                              value={selClientes[nomeIClips] || ''}
+                              onChange={e => setSelClientes(s => ({ ...s, [nomeIClips]: e.target.value }))}
+                              className="border border-border rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 w-full max-w-[280px]"
+                            >
+                              <option value="">Selecionar…</option>
+                              <option value="__OVERHEAD__">⚙ Overhead interno</option>
+                              <option value="__IGNORAR__">✕ Ignorar este nome</option>
+                              {sugestao && (
+                                <option value={sugestao}>★ {sugestao}</option>
+                              )}
+                              <optgroup label="Clientes">
+                                {clientesCanônicos
+                                  .filter(c => c !== sugestao)
+                                  .map(c => <option key={c} value={c}>{c}</option>)
+                                }
+                              </optgroup>
+                            </select>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <button
+                              disabled={!selClientes[nomeIClips]}
+                              onClick={() => {
+                                const sel = selClientes[nomeIClips]
+                                if (!sel) return
+                                addMapeamentoCliente(nomeIClips, sel)
+                                setSelClientes(s => { const n = { ...s }; delete n[nomeIClips]; return n })
+                              }}
+                              className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                            >
+                              Salvar
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Mapeamentos confirmados */}
+            {mapeamentosClientes.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-neutral mb-2">Mapeamentos confirmados:</p>
+                <div className="space-y-1.5">
+                  {mapeamentosClientes.map(({ nomeIClips, nomeCanônico }) => (
+                    <div key={nomeIClips} className="flex items-center gap-2 text-sm bg-bg-page rounded-lg px-3 py-2 border border-border">
+                      <span className="font-mono text-xs text-muted min-w-[200px]">{nomeIClips}</span>
+                      <span className="text-muted">→</span>
+                      <span className="font-medium text-neutral flex-1">
+                        {nomeCanônico === '__OVERHEAD__' ? '⚙ Overhead interno' :
+                         nomeCanônico === '__IGNORAR__' ? '✕ Ignorado' : nomeCanônico}
+                      </span>
+                      <button
+                        onClick={() => removeMapeamentoCliente(nomeIClips)}
+                        title="Desfazer vínculo"
+                        className="text-muted hover:text-danger transition-colors shrink-0"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* ── Seção: Equivalência de Colaboradores ── */}
         {(iClipsRel != null || iClipsRelatorio != null || mapeamentosColaboradores.length > 0 || colaboradoresIgnorados.length > 0) && (

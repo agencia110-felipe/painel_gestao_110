@@ -8,14 +8,22 @@ interface MapeamentoColaborador {
   vinculadoEm: string  // ISO timestamp
 }
 
+interface MapeamentoCliente {
+  nomeIClips: string    // nome exato como aparece no iClips (col clientName)
+  nomeCanônico: string  // nome canônico no sistema, '__OVERHEAD__' ou '__IGNORAR__'
+  vinculadoEm: string   // ISO timestamp
+}
+
 interface RelatorioStore {
   relatorios: RelatorioImportado[]
   mapeamentoCustom: Record<string, string>
 
   // Mapeamento iClips → store para nomes de colaboradores
   mapeamentosColaboradores: MapeamentoColaborador[]
-  // Ex-colaboradores/freelancers para ignorar no alerta (usam custo médio silenciosamente)
   colaboradoresIgnorados: string[]
+
+  // Mapeamento dinâmico iClips → cliente canônico (substitui o mapa hardcoded)
+  mapeamentosClientes: MapeamentoCliente[]
 
   addRelatorio: (r: RelatorioImportado) => void
   removeRelatorio: (id: string) => void
@@ -26,6 +34,9 @@ interface RelatorioStore {
   removeMapeamentoColaborador: (nomeIClips: string) => void
   addIgnorado: (nomeIClips: string) => void
   removeIgnorado: (nomeIClips: string) => void
+
+  addMapeamentoCliente: (nomeIClips: string, nomeCanônico: string) => void
+  removeMapeamentoCliente: (nomeIClips: string) => void
 }
 
 export const useRelatorioStore = create<RelatorioStore>()(
@@ -35,17 +46,15 @@ export const useRelatorioStore = create<RelatorioStore>()(
       mapeamentoCustom: {},
       mapeamentosColaboradores: [],
       colaboradoresIgnorados: [],
+      mapeamentosClientes: [],
 
       addRelatorio: (r) => {
-        // Strip tarefas before persisting — can be 15k+ items per quarter
         const { tarefas: _, ...semTarefas } = r
-        // Deduplication: ID takes priority (iClips live uses 'iclips-live' — always replace)
         const porId = get().relatorios.find(x => x.id === semTarefas.id)
         if (porId) {
           set(s => ({ relatorios: s.relatorios.map(x => x.id === semTarefas.id ? semTarefas : x) }))
           return
         }
-        // XLS imports: deduplicate by nomeArquivo + periodoInicio
         const existe = get().relatorios.find(
           x => x.nomeArquivo === semTarefas.nomeArquivo && x.periodoInicio === semTarefas.periodoInicio
         )
@@ -90,6 +99,19 @@ export const useRelatorioStore = create<RelatorioStore>()(
       removeIgnorado: (nomeIClips) =>
         set(s => ({
           colaboradoresIgnorados: s.colaboradoresIgnorados.filter(n => n !== nomeIClips),
+        })),
+
+      addMapeamentoCliente: (nomeIClips, nomeCanônico) =>
+        set(s => ({
+          mapeamentosClientes: [
+            ...s.mapeamentosClientes.filter(m => m.nomeIClips !== nomeIClips),
+            { nomeIClips, nomeCanônico, vinculadoEm: new Date().toISOString() },
+          ],
+        })),
+
+      removeMapeamentoCliente: (nomeIClips) =>
+        set(s => ({
+          mapeamentosClientes: s.mapeamentosClientes.filter(m => m.nomeIClips !== nomeIClips),
         })),
     }),
     { name: 'ag110-relatorios' }

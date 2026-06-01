@@ -144,7 +144,7 @@ export function DiagnosticoClienteCard({
             {hasReport && (
               <div className="rounded-md bg-bg-page px-2.5 py-2 text-xs text-muted space-y-1">
                 <div className="flex justify-between">
-                  <span>Custo XLS</span>
+                  <span>Custo iClips</span>
                   <span className="tabular-nums font-medium">{formatCurrency(custoOp)}</span>
                 </div>
                 <div className="flex justify-between">

@@ -85,3 +85,21 @@ export function mapearCliente(
     ?? MAPA_CLIENTES_RELATORIO[nome]
     ?? '__NAO_MAPEADO__'
 }
+
+// Resolução dinâmica: consulta primeiro os mapeamentos salvos pelo usuário na UI,
+// depois o mapa fixo do código. Resultado '__IGNORAR__' sinaliza que a tarefa deve
+// ser descartada no processamento do iClips.
+export function resolverCliente(
+  nomeIClips: string,
+  mapeamentosStore: { nomeIClips: string; nomeCanônico: string }[],
+): string {
+  const nome = nomeIClips?.trim()
+  if (!nome) return '__NAO_MAPEADO__'
+
+  // 1. Mapeamento manual do usuário (prioridade máxima — inclui __IGNORAR__)
+  const mapStore = mapeamentosStore.find(m => m.nomeIClips === nome)
+  if (mapStore) return mapStore.nomeCanônico
+
+  // 2. Mapa fixo do código (fallback — nomes já conhecidos)
+  return MAPA_CLIENTES_RELATORIO[nome] ?? '__NAO_MAPEADO__'
+}

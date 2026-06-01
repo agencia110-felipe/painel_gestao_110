@@ -485,31 +485,40 @@ export function Configuracoes() {
                         </p>
                         <p className="text-xs text-muted">
                           Sincronizado em {dataImport}
-                          {r.clientesNaoMapeados.length > 0 && (
-                            <button
-                              onClick={() => setExpandirNaoMapeados(v => !v)}
-                              className="ml-2 text-warning hover:underline focus:outline-none"
-                            >
-                              · {r.clientesNaoMapeados.length} cliente(s) sem mapeamento
-                              {expandirNaoMapeados ? ' ▲' : ' ▼'}
-                            </button>
-                          )}
+                          {(() => {
+                            // Desconta os que já foram mapeados manualmente
+                            const efetivos = r.clientesNaoMapeados.filter(
+                              c => !mapeamentosClientes.some(m => m.nomeIClips === c)
+                            )
+                            if (efetivos.length === 0) return null
+                            return (
+                              <>
+                                <button
+                                  onClick={() => setExpandirNaoMapeados(v => !v)}
+                                  className="ml-2 text-warning hover:underline focus:outline-none"
+                                >
+                                  · {efetivos.length} cliente(s) sem mapeamento
+                                  {expandirNaoMapeados ? ' ▲' : ' ▼'}
+                                </button>
+                                {expandirNaoMapeados && (
+                                  <div className="mt-2 p-3 bg-warning-bg border border-warning/30 rounded-lg">
+                                    <p className="text-xs text-muted mb-2">
+                                      Estes nomes aparecem no iClips mas não foram reconhecidos.
+                                      Mapeie-os na seção abaixo e clique em Atualizar.
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {efetivos.map(nome => (
+                                        <code key={nome} className="text-xs px-2 py-0.5 bg-white border border-warning/30 rounded text-neutral">
+                                          {nome}
+                                        </code>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )
+                          })()}
                         </p>
-                        {r.clientesNaoMapeados.length > 0 && expandirNaoMapeados && (
-                          <div className="mt-2 p-3 bg-warning-bg border border-warning/30 rounded-lg">
-                            <p className="text-xs text-muted mb-2">
-                              Estes nomes aparecem no iClips mas não foram reconhecidos pelo mapa de clientes.
-                              Serão ignorados nos cálculos até serem mapeados abaixo.
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {r.clientesNaoMapeados.map(nome => (
-                                <code key={nome} className="text-xs px-2 py-0.5 bg-white border border-warning/30 rounded text-neutral">
-                                  {nome}
-                                </code>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                     {!isIClips && (

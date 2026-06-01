@@ -117,6 +117,9 @@ export function useIClipsData() {
       const get = (row: unknown[], i: number): string =>
         i >= 0 && i < row.length ? String(row[i] ?? '').trim() : ''
 
+      // Lê mapeamentos no momento do fetch (getState garante os mais recentes)
+      const { mapeamentosClientes } = useRelatorioStore.getState()
+
       const mapaResumos = new Map<string, ResumoColaboradorCliente>()
       const clientesNaoMapeados = new Set<string>()
       const colaboradoresVistos = new Set<string>()
@@ -140,8 +143,6 @@ export function useIClipsData() {
         const colaborador = limparNomeColaborador(executorRaw)
         colaboradoresVistos.add(colaborador)
 
-        // Lê mapeamentos no momento do fetch para usar os vínculos mais recentes
-        const { mapeamentosClientes } = useRelatorioStore.getState()
         const clienteCanônico = resolverCliente(clienteRaw, mapeamentosClientes)
 
         // Tarefa marcada para ignorar — não conta nos cálculos

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Menu, RefreshCw, CheckCircle, AlertCircle, Calendar, CalendarRange } from 'lucide-react'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useGoogleSheets } from '@/hooks/useGoogleSheets'
@@ -23,8 +23,19 @@ export function Header({ onMenuClick, title }: HeaderProps) {
   const { refetch: refetchIClips } = useIClipsData()
   const { todosOsMeses: mesesDisponiveis } = useFilteredSheets()
 
+  // Estado de carregamento unificado (Sheets + iClips)
+  const [isFetching, setIsFetching] = useState(false)
+
+  const handleAtualizar = useCallback(async () => {
+    setIsFetching(true)
+    try {
+      await Promise.all([refetch(), refetchIClips()])
+    } finally {
+      setIsFetching(false)
+    }
+  }, [refetch, refetchIClips])
+
   // Quando novos meses chegam (iClips sync), auto-seleciona o mais recente
-  // se o mês atual não estiver na lista (ex: mock data em Mar/2026, iClips em Abr/2026)
   useEffect(() => {
     if (mesesDisponiveis.length === 0) return
     if (!mesesDisponiveis.includes(mesSelecionado)) {
@@ -124,12 +135,12 @@ export function Header({ onMenuClick, title }: HeaderProps) {
 
         {/* Atualizar */}
         <button
-          onClick={() => { refetch(); refetchIClips() }}
-          disabled={loading}
+          onClick={handleAtualizar}
+          disabled={isFetching || loading}
           className="flex items-center gap-1.5 bg-primary text-white text-xs px-3 py-1.5 rounded-lg hover:bg-primary-light transition-colors disabled:opacity-50"
         >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          <span className="hidden sm:inline">Atualizar</span>
+          <RefreshCw size={13} className={isFetching || loading ? 'animate-spin' : ''} />
+          <span className="hidden sm:inline">{isFetching ? 'Atualizando…' : 'Atualizar'}</span>
         </button>
       </div>
     </header>

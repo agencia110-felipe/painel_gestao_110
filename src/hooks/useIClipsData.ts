@@ -37,18 +37,31 @@ function parseDuracao(s: string): number {
   return isNaN(n) ? 0 : n
 }
 
-// Extrai "YYYY-MM" da data da tarefa ou do campo periodoImportado
-function extrairMesAno(dataStr: string, periodoStr: string): string {
+// Extrai "YYYY-MM" de uma string de data. Retorna '' se a data for inválida
+// (ano < 2000 — ex: "1800-01-01" que o iClips usa como sentinel de "sem data").
+function parseDateToMesAno(dataStr: string): string {
+  if (!dataStr) return ''
   // ISO: "2026-04-15" ou "2026-04-15T10:00:00"
   const m1 = dataStr.match(/^(\d{4})-(\d{2})-\d{2}/)
-  if (m1) return `${m1[1]}-${m1[2]}`
+  if (m1 && parseInt(m1[1]) >= 2000) return `${m1[1]}-${m1[2]}`
   // BR: "15/04/2026" ou "15/04/2026 10:00:00"
   const m2 = dataStr.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
-  if (m2) return `${m2[3]}-${m2[2]}`
-  // periodoImportado: "2026-04-01_2026-04-30"
-  const m3 = periodoStr.match(/^(\d{4})-(\d{2})-\d{2}/)
-  if (m3) return `${m3[1]}-${m3[2]}`
+  if (m2 && parseInt(m2[3]) >= 2000) return `${m2[3]}-${m2[2]}`
   return ''
+}
+
+// Extrai "YYYY-MM" priorizando playEndDate (data real de conclusão).
+// playStartDate do iClips frequentemente contém "1800-01-01" (sentinel inválido).
+// Fallback final: periodoImportado (campo do relatório mensal).
+function extrairMesAno(endDate: string, startDate: string, periodoStr: string): string {
+  return (
+    parseDateToMesAno(endDate) ||
+    parseDateToMesAno(startDate) ||
+    (() => {
+      const m = periodoStr.match(/^(\d{4})-(\d{2})-\d{2}/)
+      return m && parseInt(m[1]) >= 2000 ? `${m[1]}-${m[2]}` : ''
+    })()
+  )
 }
 
 export function useIClipsData() {
@@ -104,8 +117,11 @@ export function useIClipsData() {
       const iExecutor    = findCol(header, ['executionResponsible', 'execution_responsible', 'colaborador', 'executor', 'responsible', 'executionresponsible'])
       const iDepto       = findCol(header, ['nomeDepartamento', 'nome_departamento', 'departamento', 'area', 'department'])
       const iSlaTime     = findCol(header, ['slaTime', 'sla_time', 'duracao', 'tempo', 'duration', 'time', 'slatimeinhours', 'sla'])
-      const iDataInicio  = findCol(header, ['playStartDate', 'play_start_date', 'playEndDate', 'play_end_date', 'dataInicio', 'data_inicio', 'data', 'date', 'playstartdate'])
-      const iPeriodo     = findCol(header, ['periodoImportado', 'periodo_importado', 'periodo', 'period', 'periodoimportado'])
+      // Datas separadas: playEndDate é a data real de conclusão (preferida).
+      // playStartDate frequentemente vale "1800-01-01" no iClips (sentinel de "sem data").
+      const iPlayEndDate   = findCol(header, ['playEndDate', 'play_end_date', 'playenddate'])
+      const iPlayStartDate = findCol(header, ['playStartDate', 'play_start_date', 'playstartdate', 'dataInicio', 'data_inicio', 'data', 'date'])
+      const iPeriodo       = findCol(header, ['periodoImportado', 'periodo_importado', 'periodo', 'period', 'periodoimportado'])
 
       if (iClientName < 0 || iExecutor < 0 || iSlaTime < 0) {
         throw new Error(
@@ -126,18 +142,20 @@ export function useIClipsData() {
       let totalTarefas = 0
 
       for (const row of rawRows.slice(1)) {
-        const clienteRaw  = get(row, iClientName)
-        const executorRaw = get(row, iExecutor)
-        const slaRaw      = get(row, iSlaTime)
-        const dataRaw     = get(row, iDataInicio)
-        const periodoRaw  = get(row, iPeriodo)
+        const clienteRaw   = get(row, iClientName)
+        const executorRaw  = get(row, iExecutor)
+        const slaRaw       = get(row, iSlaTime)
+        const endDateRaw   = get(row, iPlayEndDate)
+        const startDateRaw = get(row, iPlayStartDate)
+        const periodoRaw   = get(row, iPeriodo)
 
         if (!clienteRaw || !executorRaw || !slaRaw) continue
 
         const horas = parseDuracao(slaRaw)
         if (horas <= 0) continue
 
-        const mesAno = extrairMesAno(dataRaw, periodoRaw)
+        // playEndDate tem prioridade — playStartDate é frequentemente "1800-01-01" no iClips
+        const mesAno = extrairMesAno(endDateRaw, startDateRaw, periodoRaw)
         if (!mesAno) continue
 
         const colaborador = limparNomeColaborador(executorRaw)

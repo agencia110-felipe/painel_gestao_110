@@ -8,7 +8,7 @@ import { useRelatorioStore } from '@/store/useRelatorioStore'
 import { useIClipsStore } from '@/store/useIClipsStore'
 import { useFilteredSheets } from '@/hooks/useFilteredSheets'
 import { MAPA_CLIENTES_RELATORIO } from '@/lib/parseRelatorio'
-import { normalizarNome } from '@/lib/calculations'
+import { normalizarNome, buildCustoHoraMapa, buscarCustoHoraPorNome } from '@/lib/calculations'
 import type { ConfigParams } from '@/types'
 
 export function Configuracoes() {
@@ -23,21 +23,47 @@ export function Configuracoes() {
     addIgnorado, removeIgnorado,
   } = useRelatorioStore()
   const { relatorio: iClipsRelatorio, loading: iClipsLoading, error: iClipsError, lastSync: iClipsSyncAt } = useIClipsStore()
-  const { naoEncontradosRelatorio } = useFilteredSheets()
 
   // Estado dos dropdowns da tabela de equivalência (nomeIClips → nomeStore selecionado)
   const [selecoes, setSelecoes] = useState<Record<string, string>>({})
 
-  // Todos os colaboradores únicos do iClips (para calcular o total auto-mapeado)
-  const todosColabIClips = useMemo(() => {
-    if (!iClipsRelatorio) return []
-    return [...new Set(iClipsRelatorio.resumos.map(r => r.colaborador))]
-  }, [iClipsRelatorio])
+  // Relatorio iClips do store PERSISTIDO (não depende do fetch em-memória)
+  const iClipsRel = useMemo(() => relatorios.find(r => r.id === 'iclips-live'), [relatorios])
 
-  // Sugestão automática: para cada colaborador pendente, buscar membro do store com mesmo primeiro nome
+  // Todos os colaboradores únicos do iClips (do relatorio persistido, não do in-memory)
+  const todosColabIClips = useMemo(() => {
+    const rel = iClipsRel ?? iClipsRelatorio
+    if (!rel) return []
+    return [...new Set(rel.resumos.map(r => r.colaborador))]
+  }, [iClipsRel, iClipsRelatorio])
+
+  // Mapa custo/hora local — replica o do useFilteredSheets para calcular pendentes aqui
+  const custoHoraMapaLocal = useMemo(() => {
+    const mapa = buildCustoHoraMapa(equipe, params.horasMes, params.aproveitamentoPct)
+    for (const { nomeIClips, nomeStore } of mapeamentosColaboradores) {
+      const custoH = mapa.get(normalizarNome(nomeStore))
+      if (custoH !== undefined) {
+        const chave = normalizarNome(nomeIClips)
+        if (!mapa.has(chave)) mapa.set(chave, custoH)
+      }
+    }
+    return mapa
+  }, [equipe, params.horasMes, params.aproveitamentoPct, mapeamentosColaboradores])
+
+  // Pendentes = colaboradores do iClips que não estão no store, não foram mapeados e não foram ignorados.
+  // Usa o relatorio COMPLETO (sem filtro de período) para nunca ficar vazio por causa do mês selecionado.
+  const pendentes = useMemo(() => {
+    return todosColabIClips.filter(nome =>
+      !mapeamentosColaboradores.some(m => m.nomeIClips === nome) &&
+      !colaboradoresIgnorados.includes(nome) &&
+      !buscarCustoHoraPorNome(custoHoraMapaLocal, nome)
+    )
+  }, [todosColabIClips, mapeamentosColaboradores, colaboradoresIgnorados, custoHoraMapaLocal])
+
+  // Sugestão automática: membro do store com mesmo primeiro nome
   const sugestoesMap = useMemo(() => {
     const mapa: Record<string, string> = {}
-    for (const nomeIClips of naoEncontradosRelatorio) {
+    for (const nomeIClips of pendentes) {
       const primeiroIClips = normalizarNome(nomeIClips).split(' ')[0]
       const candidatos = equipe.filter(
         m => m.status === 'Ativo' && normalizarNome(m.nome).split(' ')[0] === primeiroIClips
@@ -45,7 +71,7 @@ export function Configuracoes() {
       if (candidatos.length === 1) mapa[nomeIClips] = candidatos[0].nome
     }
     return mapa
-  }, [naoEncontradosRelatorio, equipe])
+  }, [pendentes, equipe])
 
   // Pré-preencher dropdowns com sugestões automáticas (não sobrescreve escolhas do usuário)
   useEffect(() => {
@@ -60,7 +86,7 @@ export function Configuracoes() {
 
   const autoCount = Math.max(
     0,
-    todosColabIClips.length - naoEncontradosRelatorio.length - colaboradoresIgnorados.length
+    todosColabIClips.length - pendentes.length - mapeamentosColaboradores.length - colaboradoresIgnorados.length
   )
 
   const [testStatus, setTestStatus] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
@@ -476,7 +502,7 @@ export function Configuracoes() {
         </section>
 
         {/* ── Seção: Equivalência de Colaboradores ── */}
-        {iClipsRelatorio && (
+        {(iClipsRel != null || iClipsRelatorio != null || mapeamentosColaboradores.length > 0 || colaboradoresIgnorados.length > 0) && (
           <section className="bg-white rounded-xl border border-border p-5">
             <div className="flex items-center gap-2 mb-1">
               <Link2 size={15} className="text-primary" />
@@ -499,9 +525,9 @@ export function Configuracoes() {
                   <Link2 size={11} /> {mapeamentosColaboradores.length} vinculados manualmente
                 </span>
               )}
-              {naoEncontradosRelatorio.length > 0 && (
+              {pendentes.length > 0 && (
                 <span className="flex items-center gap-1 bg-warning-bg text-warning border border-warning/20 rounded-lg px-3 py-1.5">
-                  <AlertTriangle size={11} /> {naoEncontradosRelatorio.length} aguardando vínculo
+                  <AlertTriangle size={11} /> {pendentes.length} aguardando vínculo
                 </span>
               )}
               {colaboradoresIgnorados.length > 0 && (
@@ -509,7 +535,7 @@ export function Configuracoes() {
                   — {colaboradoresIgnorados.length} ignorados
                 </span>
               )}
-              {naoEncontradosRelatorio.length === 0 && todosColabIClips.length > 0 && (
+              {pendentes.length === 0 && todosColabIClips.length > 0 && (
                 <span className="flex items-center gap-1 bg-success-bg text-success border border-success/20 rounded-lg px-3 py-1.5">
                   <CheckCircle size={11} /> Todos os colaboradores estão mapeados
                 </span>
@@ -517,7 +543,7 @@ export function Configuracoes() {
             </div>
 
             {/* Tabela de pendentes */}
-            {naoEncontradosRelatorio.length > 0 && (
+            {pendentes.length > 0 && (
               <div className="mb-6">
                 <p className="text-xs font-medium text-neutral mb-2">Aguardando vínculo manual:</p>
                 <div className="overflow-x-auto rounded-lg border border-border">
@@ -530,7 +556,7 @@ export function Configuracoes() {
                       </tr>
                     </thead>
                     <tbody>
-                      {naoEncontradosRelatorio.map(nomeIClips => {
+                      {pendentes.map(nomeIClips => {
                         const sugestao = sugestoesMap[nomeIClips]
                         const temSugestao = Boolean(sugestao)
                         return (

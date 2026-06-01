@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Menu, RefreshCw, CheckCircle, AlertCircle, Calendar, CalendarRange } from 'lucide-react'
 import { useSheetsStore } from '@/store/useSheetsStore'
 import { useGoogleSheets } from '@/hooks/useGoogleSheets'
@@ -21,6 +22,15 @@ export function Header({ onMenuClick, title }: HeaderProps) {
   const { refetch } = useGoogleSheets()
   const { refetch: refetchIClips } = useIClipsData()
   const { todosOsMeses: mesesDisponiveis } = useFilteredSheets()
+
+  // Quando novos meses chegam (iClips sync), auto-seleciona o mais recente
+  // se o mês atual não estiver na lista (ex: mock data em Mar/2026, iClips em Abr/2026)
+  useEffect(() => {
+    if (mesesDisponiveis.length === 0) return
+    if (!mesesDisponiveis.includes(mesSelecionado)) {
+      setMesSelecionado(mesesDisponiveis[mesesDisponiveis.length - 1])
+    }
+  }, [mesesDisponiveis])
 
   const syncAgo = lastSync
     ? Math.floor((Date.now() - lastSync.getTime()) / 60000)

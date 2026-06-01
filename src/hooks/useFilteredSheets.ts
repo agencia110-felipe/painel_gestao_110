@@ -204,6 +204,25 @@ export function useFilteredSheets() {
     return mapa
   }, [relatoriosFiltrados, clientesFiltrados, custoHoraMapa, custoHoraMedia])
 
+  // LOG DE DIAGNÓSTICO — remover após confirmar que os dados chegam corretamente
+  useEffect(() => {
+    console.group('[useFilteredSheets] diagnóstico')
+    console.log('mesSelecionado:', mesSelecionado)
+    console.log('mesesRelatorioNoFiltro:', mesesRelatorioNoFiltro)
+    console.log('relatorios no store:', relatorios.map(r => ({
+      id: r.id,
+      meses: r.mesesCobertos,
+      resumos: r.resumos.length,
+      tarefas: r.totalTarefas,
+    })))
+    console.log('relatoriosFiltrados:', relatoriosFiltrados.map(r => ({
+      id: r.id,
+      resumos: r.resumos.length,
+    })))
+    console.log('custoXLSPorCliente:', [...custoXLSPorCliente.keys()])
+    console.groupEnd()
+  }, [mesSelecionado, relatorios, relatoriosFiltrados, custoXLSPorCliente, mesesRelatorioNoFiltro])
+
   // Totais XLS para calcular o pool de custos adicionais
   const totalXLSAllClients = useMemo(() => {
     let total = 0

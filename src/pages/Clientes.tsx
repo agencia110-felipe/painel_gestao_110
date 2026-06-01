@@ -383,8 +383,8 @@ export function Clientes() {
         <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <span className="mt-0.5 shrink-0 font-bold">⚠</span>
           <span>
-            Divergência de <strong>R$ {divergencia.toFixed(0)}</strong> entre o lucro calculado pelo método integrado e pelo rateio.
-            Verifique se o custo total do período e o XLS cobrem o mesmo intervalo de datas.
+            Divergência de <strong>R$ {divergencia.toFixed(0)}</strong> entre os métodos de cálculo.
+            Verifique se o iClips tem dados para todos os meses do período selecionado e se os custos fixos e variáveis estão cadastrados para o mesmo período.
           </span>
         </div>
       )}

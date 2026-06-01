@@ -236,10 +236,15 @@ export function useFilteredSheets() {
     return total
   }, [custoXLSPorCliente])
 
-  // Custo integrado por cliente: XLS + custos adicionais do store proporcionais
+  // Custo integrado por cliente: XLS + custos adicionais do store proporcionais.
+  // Guarda: se totalXLSAllClients > custoTotal em mais de 10%, o pool de "custos adicionais"
+  // seria negativo (iClips cobre mais meses ou mais overhead que o store). Nesse caso
+  // omite o mapa integrado para não distorcer as margens financeiras.
   const custoIntegradoPorCliente = useMemo(() => {
     const mapa = new Map<string, CustoClienteIntegrado>()
     if (custoXLSPorCliente.size === 0) return mapa
+    if (totalXLSAllClients > custoTotal * 1.1) return mapa
+
     const receitaMap = new Map(clientesFiltrados.map(c => [c.cliente, c.entradaContratual]))
     custoXLSPorCliente.forEach((xlsData, nome) => {
       mapa.set(nome, calcCustoTotalClienteComRelatorio(

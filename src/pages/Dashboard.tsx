@@ -1,515 +1,121 @@
-import { useMemo } from 'react'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, ReferenceLine,
-} from 'recharts'
-import { PageWrapper } from '@/components/layout/PageWrapper'
-import { MetricCard } from '@/components/shared/MetricCard'
-import { AlertBanner } from '@/components/shared/AlertBanner'
-import { ChartCard } from '@/components/charts/ChartCard'
-import { useFilteredSheets } from '@/hooks/useFilteredSheets'
-import { useSheetsStore } from '@/store/useSheetsStore'
-import { useCustosStore } from '@/store/useCustosStore'
-import { useConfigStore } from '@/store/useConfigStore'
-import {
-  calcHorasFaturaveisTotal,
-  calcCustoPorHoraReal,
-  calcPrecoPorHoraMinimo,
-  calcPrecoPorHoraRecomendado,
-  calcTicketMedioReceita,
-  calcClientesAnalise,
-  calcCustoBackendEquipe,
-  calcCustoBackendFixos,
-  calcTotalFolha,
-  calcTotalFixos,
-  calcTotalVariaveis,
-  calcTotalImpostos,
-  calcTotalComissoes,
-  calcCustoTotalMensal,
-  calcDRE,
-  membroFaturavelPct,
-} from '@/lib/calculations'
+import { useState } from 'react'
+import { mesAtual } from '@/lib/utils'
 import { formatCurrency, formatPercent, formatHours } from '@/lib/formatters'
-import { CHART_COLORS } from '@/lib/constants'
-import { sortMesAno } from '@/lib/aggregation'
+import { useEngine } from '@/hooks/useEngine'
+import { PendenciasBanner } from '@/components/PendenciasBanner'
+import { PeriodoFilter } from '@/components/PeriodoFilter'
+import { StatCard } from '@/components/ui/Card'
+import { useConfigStore } from '@/stores/configStore'
+import type { Periodo } from '@/types'
 import {
-  TrendingUp, Users, DollarSign, Clock, AlertTriangle, Target,
-} from 'lucide-react'
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts'
 
-export function Dashboard() {
-  const { clientesFiltrados, colaboradoresFiltrados, custoTotal, custoMensal, labelPeriodo, isRange, nMeses, mesesNoFiltro } = useFilteredSheets()
-  const { clientes, mesSelecionado, modoFiltro } = useSheetsStore()
-  const { equipe, fixos, variaveis } = useCustosStore()
-  const { params } = useConfigStore()
+export function DashboardPage() {
+  const [periodo, setPeriodo] = useState<Periodo>(() => {
+    const m = mesAtual()
+    return { inicio: m, fim: m }
+  })
+  const margemDesejadaPct = useConfigStore((s) => s.margemDesejadaPct)
+  const { pendencias, resultadosClientes, dre } = useEngine(periodo)
 
-  const analiseClientes = useMemo(
-    () => calcClientesAnalise(clientesFiltrados, custoTotal),
-    [clientesFiltrados, custoTotal]
-  )
+  const receitaBruta = dre?.receitaBruta ?? 0
+  const resultadoLiquido = dre?.resultadoLiquido ?? 0
+  const margemLiquida = dre?.margemLiquida ?? null
+  const totalHoras = resultadosClientes.reduce((s, c) => s + c.horasDiretas, 0)
 
-  const receita = useMemo(
-    () => clientesFiltrados.reduce((s, c) => s + c.entradaContratual, 0),
-    [clientesFiltrados]
-  )
-
-  // custoTotal from useFilteredSheets já inclui impostos e desconta comissões
-  const lucro = receita - custoTotal
-  const margemLiquida = receita > 0 ? lucro / receita : 0
-
-  // Componentes de custo separados para DRE e composição
-  const totalFolhaPeriodo = useMemo(
-    () => mesesNoFiltro.length > 0
-      ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFolha(equipe, m), 0)
-      : calcTotalFolha(equipe),
-    [equipe, mesesNoFiltro]
-  )
-  const totalFixosPeriodo = useMemo(
-    () => mesesNoFiltro.length > 0
-      ? mesesNoFiltro.reduce((acc, m) => acc + calcTotalFixos(fixos, m), 0)
-      : calcTotalFixos(fixos),
-    [fixos, mesesNoFiltro]
-  )
-  const totalVariaveisOpPeriodo = useMemo(() => {
-    const varOp = variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão')
-    return mesesNoFiltro.reduce((acc, m) => acc + calcTotalVariaveis(varOp, m), 0)
-  }, [variaveis, mesesNoFiltro])
-
-  const totalImpostosPeriodo = useMemo(
-    () => mesesNoFiltro.reduce((acc, m) => acc + calcTotalImpostos(variaveis, m), 0),
-    [variaveis, mesesNoFiltro]
-  )
-
-  const totalComissoesPeriodo = useMemo(
-    () => mesesNoFiltro.reduce((acc, m) => acc + calcTotalComissoes(variaveis, m), 0),
-    [variaveis, mesesNoFiltro]
-  )
-
-  const dre = useMemo(
-    () => calcDRE(receita, totalFolhaPeriodo, totalFixosPeriodo, totalVariaveisOpPeriodo, totalImpostosPeriodo, totalComissoesPeriodo),
-    [receita, totalFolhaPeriodo, totalFixosPeriodo, totalVariaveisOpPeriodo, totalImpostosPeriodo, totalComissoesPeriodo]
-  )
-
-  const horasFaturaveis = useMemo(
-    () => calcHorasFaturaveisTotal(equipe, params.horasMes, params.aproveitamentoPct),
-    [equipe, params]
-  )
-
-  const custoPorHora = calcCustoPorHoraReal(custoMensal, horasFaturaveis)
-  const precoMinimo = calcPrecoPorHoraMinimo(custoPorHora, params.margemDesejadaPct)
-  const precoRecomendado = calcPrecoPorHoraRecomendado(precoMinimo, params.fatorComplexidadePct)
-  const ticketMedio = calcTicketMedioReceita(clientesFiltrados, nMeses)
-  const ticketMedioLucro = analiseClientes.length > 0
-    ? analiseClientes.reduce((s, c) => s + c.lucroReal, 0) / (analiseClientes.length * nMeses)
-    : 0
-
-  const totalHoras = useMemo(
-    () => clientesFiltrados.reduce((s, c) => s + c.tempoTrabalhado, 0),
-    [clientesFiltrados]
-  )
-
-  const equipeMap = useMemo(
-    () => new Map(equipe.map(m => [m.nome.trim().toLowerCase(), m])),
-    [equipe]
-  )
-
-  const ocupacaoMedia = useMemo(() => {
-    if (colaboradoresFiltrados.length === 0) return 0
-    const total = colaboradoresFiltrados.reduce((s, c) => {
-      const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
-      const carga = (membro?.cargaHorariaMes ?? params.horasMes) * nMeses
-      return s + (carga > 0 ? c.tempoTrabalhado / carga : 0)
-    }, 0)
-    return total / colaboradoresFiltrados.length
-  }, [colaboradoresFiltrados, equipeMap, params.horasMes, nMeses])
-
-  const setorMaisSobrecarregado = useMemo(() => {
-    const porArea: Record<string, { horas: number; carga: number }> = {}
-    colaboradoresFiltrados.forEach(c => {
-      const membro = equipeMap.get(c.colaborador.trim().toLowerCase())
-      if (!membro) return
-      const carga = membro.cargaHorariaMes ?? params.horasMes
-      for (const aloc of membro.alocacoes) {
-        const pctFrac = aloc.pct / 100
-        if (!porArea[aloc.setor]) porArea[aloc.setor] = { horas: 0, carga: 0 }
-        porArea[aloc.setor].horas += c.tempoTrabalhado * pctFrac
-        porArea[aloc.setor].carga += carga * pctFrac
-      }
-      if (membro.alocacoes.length === 0) {
-        // fallback: colaborador sem alocações conta como uma entidade genérica
-        if (!porArea['—']) porArea['—'] = { horas: 0, carga: 0 }
-        porArea['—'].horas += c.tempoTrabalhado
-        porArea['—'].carga += carga
-      }
-    })
-    let maxArea = '-'
-    let maxPct = 0
-    Object.entries(porArea).forEach(([area, v]) => {
-      const pct = v.carga > 0 ? v.horas / v.carga : 0
-      if (pct > maxPct) { maxPct = pct; maxArea = area }
-    })
-    return { nome: maxArea, pct: maxPct }
-  }, [colaboradoresFiltrados])
-
-  // ── Alert conditions ──────────────────────────────────────────────────────
-  const clientesNegativos = analiseClientes.filter(c => c.lucroReal < 0)
-  const altaOcupacao = ocupacaoMedia > 0.85
-
-  // ── Chart: Receita vs Custo vs Lucro (all months) ─────────────────────────
-  const mesesDisponiveis = useMemo(() => {
-    return sortMesAno([...new Set(clientes.map(c => c.mesAno))])
-  }, [clientes])
-
-  const chartReceitaCustoLucro = useMemo(() => {
-    return mesesDisponiveis.map(mes => {
-      const clientesMes = clientes.filter(c => c.mesAno === mes)
-      const receitaMes = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
-      const custoMes = calcCustoTotalMensal(equipe, fixos, variaveis, mes)
-      return {
-        mes,
-        Receita: receitaMes,
-        Custo: custoMes,
-        Lucro: receitaMes - custoMes,
-      }
-    })
-  }, [clientes, mesesDisponiveis, equipe, fixos, variaveis])
-
-  // ── Chart: Composição do custo (mês selecionado) ───────────────────────────
-  const mesFiltroComposicao = modoFiltro === 'mensal' ? mesSelecionado : undefined
-
-  const folhaFaturavel = useMemo(() => {
-    return equipe
-      .filter(m => m.status === 'Ativo' && m.salario > 0)
-      .reduce((s, m) => s + m.salario * membroFaturavelPct(m), 0)
-  }, [equipe])
-
-  const backendEquipe = useMemo(() => calcCustoBackendEquipe(equipe), [equipe])
-
-  const fixosMes = useMemo(
-    () => fixos.filter(f => !f.mesAno || f.mesAno === mesFiltroComposicao),
-    [fixos, mesFiltroComposicao]
-  )
-  const backendFixos = useMemo(() => calcCustoBackendFixos(fixosMes), [fixosMes])
-  const fixosOperacionais = useMemo(
-    () => fixosMes.filter(f => f.tipo === 'Operacional').reduce((s, f) => s + f.valor, 0),
-    [fixosMes]
-  )
-  const variaveisOpComposicao = useMemo(
-    () => calcTotalVariaveis(variaveis.filter(v => v.categoria !== 'Imposto' && v.categoria !== 'Comissão'), mesFiltroComposicao),
-    [variaveis, mesFiltroComposicao]
-  )
-  const impostosComposicao = useMemo(
-    () => calcTotalImpostos(variaveis, mesFiltroComposicao),
-    [variaveis, mesFiltroComposicao]
-  )
-  const comissoesComposicao = useMemo(
-    () => calcTotalComissoes(variaveis, mesFiltroComposicao),
-    [variaveis, mesFiltroComposicao]
-  )
-
-  const chartComposicaoCusto = [
-    { name: 'Folha Faturável',    value: folhaFaturavel,       color: CHART_COLORS.primary },
-    { name: 'Backend Equipe',     value: backendEquipe,        color: CHART_COLORS.secondary },
-    { name: 'Fixos Operacionais', value: fixosOperacionais,    color: CHART_COLORS.teal },
-    { name: 'Fixos Backend',      value: backendFixos,         color: CHART_COLORS.purple },
-    { name: 'Variáveis',          value: variaveisOpComposicao,color: CHART_COLORS.orange },
-    { name: 'Impostos',           value: impostosComposicao,   color: CHART_COLORS.danger },
-  ].filter(d => d.value > 0)
-
-  // ── Chart: Lucro por cliente ───────────────────────────────────────────────
-  const chartLucroPorCliente = useMemo(() => {
-    return [...analiseClientes]
-      .sort((a, b) => b.lucroReal - a.lucroReal)
-      .map(c => ({
-        cliente: c.nome.length > 12 ? c.nome.slice(0, 12) + '…' : c.nome,
-        Lucro: c.lucroReal,
-        fill: c.lucroReal >= 0 ? CHART_COLORS.success : CHART_COLORS.danger,
-      }))
-  }, [analiseClientes])
-
-  // ── Chart: Evolução da margem ──────────────────────────────────────────────
-  const chartEvolucaoMargem = useMemo(() => {
-    return mesesDisponiveis.map(mes => {
-      const clientesMes = clientes.filter(c => c.mesAno === mes)
-      const receitaMes = clientesMes.reduce((s, c) => s + c.entradaContratual, 0)
-      const custoMes = calcCustoTotalMensal(equipe, fixos, variaveis, mes)
-      const lucroMes = receitaMes - custoMes
-      return {
-        mes,
-        margem: receitaMes > 0 ? parseFloat(((lucroMes / receitaMes) * 100).toFixed(1)) : 0,
-      }
-    })
-  }, [clientes, mesesDisponiveis, equipe, fixos, variaveis])
-
-  const isMockData = clientes.some(c => c.cliente === 'Virage')
-
-  const currencyFormatter = (v: number) => formatCurrency(v)
-  const percentAxisFormatter = (v: number) => `${v}%`
-
-  if (clientesFiltrados.length === 0) {
-    return (
-      <PageWrapper>
-        <div className="flex items-center justify-center h-64 text-muted text-sm">
-          Nenhum dado para o período selecionado
-        </div>
-      </PageWrapper>
-    )
-  }
+  // Top clientes por custo total
+  const topClientes = [...resultadosClientes]
+    .filter((c) => c.faturamento > 0 || c.horasDiretas > 0)
+    .sort((a, b) => b.custoTotal - a.custoTotal)
+    .slice(0, 8)
 
   return (
-    <PageWrapper>
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral">Visão Executiva</h1>
-        <p className="text-sm text-muted mt-1">Painel geral de desempenho — {labelPeriodo}{isRange ? ' (período acumulado)' : ''}</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-xl font-bold text-neutral-900">Dashboard</h1>
+        <PeriodoFilter periodo={periodo} onChange={setPeriodo} />
       </div>
 
-      {/* ── Alerts ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 mb-6">
-        {isMockData && (
-          <AlertBanner
-            type="info"
-            message="Você está visualizando dados de demonstração. Conecte sua planilha para dados reais."
-          />
-        )}
-        {clientesNegativos.length > 0 && (
-          <AlertBanner
-            type="danger"
-            message={`${clientesNegativos.length} cliente(s) com margem negativa: ${clientesNegativos.map(c => c.nome).join(', ')}`}
-          />
-        )}
-        {altaOcupacao && (
-          <AlertBanner
-            type="warn"
-            message={`Ocupação média da equipe em ${formatPercent(ocupacaoMedia)} — acima do limite de 85%. Avalie a contratação.`}
-          />
-        )}
-      </div>
+      <PendenciasBanner pendencias={pendencias} />
 
-      {/* ── KPIs linha 1 ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-4">
-        <MetricCard
-          label="Receita Total"
-          value={formatCurrency(receita)}
-          icon={<DollarSign size={16} />}
-          variant="default"
-          subtext={isRange ? `${nMeses} meses` : labelPeriodo}
+      {/* KPIs */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Receita Bruta"
+          value={formatCurrency(receitaBruta)}
+          color="default"
         />
-        <MetricCard
-          label="Custo Total"
-          value={formatCurrency(custoTotal)}
-          icon={<AlertTriangle size={16} />}
-          variant="default"
-          subtext={isRange ? `${nMeses} meses` : labelPeriodo}
-        />
-        <MetricCard
+        <StatCard
           label="Resultado Líquido"
-          value={formatCurrency(lucro)}
-          icon={<TrendingUp size={16} />}
-          variant={lucro >= 0 ? 'success' : 'danger'}
-          subtext={totalImpostosPeriodo > 0 ? `Após ${formatCurrency(totalImpostosPeriodo)} impostos` : 'Sem impostos lançados'}
+          value={formatCurrency(resultadoLiquido)}
+          color={resultadoLiquido >= 0 ? 'success' : 'danger'}
         />
-        <MetricCard
+        <StatCard
           label="Margem Líquida"
-          value={formatPercent(margemLiquida)}
-          icon={<Target size={16} />}
-          variant={margemLiquida >= 0.25 ? 'success' : margemLiquida >= 0.10 ? 'warning' : 'danger'}
-          subtext="Meta: 25%"
+          value={margemLiquida !== null ? formatPercent(margemLiquida) : '—'}
+          sub={`Meta: ${formatPercent(margemDesejadaPct)}`}
+          color={
+            margemLiquida === null
+              ? 'default'
+              : margemLiquida >= margemDesejadaPct
+              ? 'success'
+              : margemLiquida >= 0
+              ? 'warning'
+              : 'danger'
+          }
         />
-        <MetricCard
-          label="Custo / Hora Real"
-          value={formatCurrency(custoPorHora)}
-          icon={<Clock size={16} />}
-          subtext={`${formatHours(horasFaturaveis)} fat./mês · mensal`}
-        />
-        <MetricCard
-          label="Preço / Hora Rec."
-          value={formatCurrency(precoRecomendado)}
-          icon={<TrendingUp size={16} />}
-          variant="info"
-          subtext={`Mín. ${formatCurrency(precoMinimo)} · mensal`}
-        />
-      </div>
-
-      {/* ── KPIs linha 2 ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        <MetricCard
-          label="Clientes Ativos"
-          value={String(clientesFiltrados.length)}
-          icon={<Users size={16} />}
-        />
-        <MetricCard
-          label="Ticket Médio Receita"
-          value={formatCurrency(ticketMedio)}
-          icon={<DollarSign size={16} />}
-          subtext="por cliente/mês"
-        />
-        <MetricCard
-          label="Ticket Médio Lucro"
-          value={formatCurrency(ticketMedioLucro)}
-          variant={ticketMedioLucro >= 0 ? 'success' : 'danger'}
-          subtext="por cliente/mês"
-        />
-        <MetricCard
-          label="Total Horas (clientes)"
+        <StatCard
+          label="Horas Diretas"
           value={formatHours(totalHoras)}
-          icon={<Clock size={16} />}
-          subtext={isRange ? `${nMeses} meses` : labelPeriodo}
-        />
-        <MetricCard
-          label="Ocupação Geral"
-          value={formatPercent(ocupacaoMedia)}
-          variant={ocupacaoMedia > 0.85 ? 'danger' : ocupacaoMedia > 0.70 ? 'warning' : 'success'}
-          subtext="Média da equipe"
-        />
-        <MetricCard
-          label="Setor Mais Sobrecarr."
-          value={setorMaisSobrecarregado.nome}
-          subtext={formatPercent(setorMaisSobrecarregado.pct)}
-          variant={setorMaisSobrecarregado.pct > 0.85 ? 'danger' : 'warning'}
+          sub={`${resultadosClientes.filter((c) => c.horasDiretas > 0).length} clientes`}
         />
       </div>
 
-      {/* ── Charts ──────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        {/* Chart 1: Receita vs Custo vs Lucro */}
-        <ChartCard
-          title="Receita vs Custo vs Lucro"
-          subtitle="Evolução mensal"
-        >
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartReceitaCustoLucro} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" />
-              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#888' }} />
-              <YAxis tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: '#888' }} />
-              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="Receita" fill={CHART_COLORS.primary} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="Custo" fill={CHART_COLORS.danger} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="Lucro" fill={CHART_COLORS.success} radius={[3, 3, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* Chart 2: Composição do Custo */}
-        <ChartCard
-          title="Composição do Custo"
-          subtitle={`Total: ${formatCurrency(custoTotal)}${comissoesComposicao > 0 ? ` (comissões: -${formatCurrency(comissoesComposicao)})` : ''}`}
-        >
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie
-                data={chartComposicaoCusto}
-                cx="50%"
-                cy="50%"
-                innerRadius={70}
-                outerRadius={110}
-                paddingAngle={2}
-                dataKey="value"
-                nameKey="name"
-                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                labelLine={false}
-              >
-                {chartComposicaoCusto.map((entry, i) => (
-                  <Cell key={i} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-            </PieChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* Chart 3: Lucro por Cliente */}
-        <ChartCard
-          title="Lucro por Cliente"
-          subtitle={labelPeriodo}
-        >
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart
-              data={chartLucroPorCliente}
-              layout="vertical"
-              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" horizontal={false} />
-              <XAxis type="number" tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11, fill: '#888' }} />
-              <YAxis type="category" dataKey="cliente" width={85} tick={{ fontSize: 11, fill: '#555' }} />
-              <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              <Bar dataKey="Lucro" radius={[0, 3, 3, 0]}>
-                {chartLucroPorCliente.map((entry, i) => (
-                  <Cell key={i} fill={entry.fill} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        {/* Chart 4: Evolução da Margem */}
-        <ChartCard
-          title="Evolução da Margem"
-          subtitle="Margem líquida % por mês"
-        >
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartEvolucaoMargem} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" />
-              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: '#888' }} />
-              <YAxis tickFormatter={percentAxisFormatter} tick={{ fontSize: 11, fill: '#888' }} />
-              <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
-              <ReferenceLine y={25} stroke={CHART_COLORS.warning} strokeDasharray="5 5" label={{ value: 'Meta 25%', position: 'right', fontSize: 11, fill: CHART_COLORS.warning }} />
-              <Line
-                type="monotone"
-                dataKey="margem"
-                stroke={CHART_COLORS.primary}
-                strokeWidth={2.5}
-                dot={{ fill: CHART_COLORS.primary, r: 4 }}
-                activeDot={{ r: 6 }}
+      {/* Gráfico custo vs receita por cliente */}
+      {topClientes.length > 0 && (
+        <div className="bg-bg-card border border-border rounded-xl p-5">
+          <h2 className="text-base font-semibold text-neutral-900 mb-4">
+            Custo vs. Receita por Cliente
+          </h2>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={topClientes} layout="vertical" margin={{ left: 80, right: 20 }}>
+              <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+              <YAxis type="category" dataKey="nome" tick={{ fontSize: 11 }} width={80} />
+              <Tooltip
+                formatter={(v) => formatCurrency(Number(v))}
+                labelStyle={{ fontWeight: 600 }}
               />
-            </LineChart>
+              <Bar dataKey="faturamento" name="Receita" fill="#22c55e" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="custoTotal" name="Custo Total" fill="#ef4444" radius={[0, 4, 4, 0]} />
+            </BarChart>
           </ResponsiveContainer>
-        </ChartCard>
-      </div>
+        </div>
+      )}
 
-      {/* ── DRE ─────────────────────────────────────────────────────────────── */}
-      <div className="mt-6 bg-white rounded-xl border border-border overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-neutral text-sm">Demonstração do Resultado (DRE)</h3>
-            <p className="text-xs text-muted mt-0.5">{labelPeriodo}{dre.impostos === 0 && ' — cadastre impostos em Custos → Impostos para resultado preciso'}</p>
-          </div>
-        </div>
-        <div className="divide-y divide-border text-sm">
-          {[
-            { label: 'Receita Bruta',      value: dre.receitaBruta,       bold: false, sign: 1,  color: '' },
-            { label: 'Impostos',           value: dre.impostos,           bold: false, sign: -1, color: 'text-danger' },
-            { label: 'Lucro Bruto',        value: dre.lucroBruto,         bold: true,  sign: 1,  color: dre.lucroBruto >= 0 ? 'text-success' : 'text-danger' },
-            { label: 'Despesas Variáveis', value: dre.despesasVariaveis,  bold: false, sign: -1, color: 'text-danger' },
-            { label: 'Lucro Operacional',  value: dre.lucroOperacional,   bold: true,  sign: 1,  color: dre.lucroOperacional >= 0 ? 'text-success' : 'text-danger' },
-            { label: 'Despesas Fixas',     value: dre.despesasFixas,      bold: false, sign: -1, color: 'text-danger' },
-            { label: 'Gastos com Pessoal', value: dre.gastosComPessoal,   bold: false, sign: -1, color: 'text-danger' },
-            { label: 'Comissões',          value: dre.comissoes,          bold: false, sign: 1,  color: dre.comissoes > 0 ? 'text-success' : 'text-muted' },
-            { label: 'Resultado Líquido',  value: dre.resultadoLiquido,   bold: true,  sign: 1,  color: dre.resultadoLiquido >= 0 ? 'text-success font-bold' : 'text-danger font-bold' },
-          ].map((row, i) => {
-            const isSubtraction = row.sign === -1
-            const isAddition = row.sign === 1 && !row.bold && row.label !== 'Receita Bruta'
-            const prefix = isSubtraction ? '− ' : isAddition && row.value > 0 ? '+ ' : ''
-            return (
-              <div key={i} className={`flex items-center justify-between px-5 py-2.5 ${row.bold ? 'bg-bg-page' : ''}`}>
-                <span className={`text-neutral ${isSubtraction || isAddition ? 'pl-4 text-muted' : ''} ${row.bold ? 'font-semibold' : ''}`}>
-                  {prefix}{row.label}
-                </span>
-                <span className={`font-mono-nums tabular-nums ${row.color || 'text-neutral'} ${row.bold ? 'font-semibold' : ''}`}>
-                  {isSubtraction && <span className="text-xs mr-0.5 opacity-60">(saída) </span>}
-                  {formatCurrency(row.value)}
-                </span>
+      {/* Resumo DRE simplificado */}
+      {dre && (
+        <div className="bg-bg-card border border-border rounded-xl p-5">
+          <h2 className="text-base font-semibold text-neutral-900 mb-3">Resumo de Custos</h2>
+          <div className="space-y-2 text-sm">
+            {[
+              { label: 'Custo Direto (folha operacional)', value: dre.custoDiretoTotal },
+              { label: 'Custo Backend (rateado por receita)', value: dre.custoBackendTotal },
+              { label: 'Overhead Interno (rateado por horas)', value: dre.custoOverheadInterno },
+              { label: 'Custos Fixos', value: dre.custoFixoTotal },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between">
+                <span className="text-muted">{label}</span>
+                <span className="font-medium text-neutral-900">{formatCurrency(value)}</span>
               </div>
-            )
-          })}
-          <div className="px-5 py-2.5 flex items-center justify-between bg-neutral/5">
-            <span className="text-xs text-muted">Margem Líquida</span>
-            <span className={`text-xs font-semibold ${dre.margemLiquida >= 0.25 ? 'text-success' : dre.margemLiquida >= 0 ? 'text-warning' : 'text-danger'}`}>
-              {formatPercent(dre.margemLiquida)}
-            </span>
+            ))}
+            <div className="border-t border-border pt-2 mt-1 flex items-center justify-between font-semibold">
+              <span>Custo Total</span>
+              <span>{formatCurrency(dre.custoDiretoTotal + dre.custoBackendTotal + dre.custoOverheadInterno + dre.custoFixoTotal)}</span>
+            </div>
           </div>
         </div>
-      </div>
-    </PageWrapper>
+      )}
+    </div>
   )
 }

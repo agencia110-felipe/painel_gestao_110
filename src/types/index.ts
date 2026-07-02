@@ -1,189 +1,165 @@
-export interface ClienteSheet {
-  mesAno: string;
-  cluster: string;
-  cliente: string;
-  tempoTrabalhado: number;
-  entradaContratual: number;
-  semReceita: boolean;
+// ─── SETOR ──────────────────────────────────────────────────────────────────
+
+export interface Setor {
+  id: string
+  nome: string
+  tipo: 'Operacional' | 'Backend'
 }
 
-export interface ColaboradorSheet {
-  mesAno: string;
-  colaborador: string;
-  tempoTrabalhado: number;
-  totalJobs: number;
-  percentualEntregas: number;
-  semDados: boolean;
+// ─── COLABORADOR ────────────────────────────────────────────────────────────
+
+export interface HistoricoSalario {
+  id: string
+  mesVigenciaInicio: string  // 'YYYY-MM'
+  salarioBruto: number
 }
 
-export interface Alocacao {
-  setor: string;
-  pct: number; // 0–100
+export interface AlocacaoSetor {
+  setorId: string
+  percentual: number  // 0–100
 }
 
-export interface EquipeMembro {
-  id: string;
-  nome: string;
-  cargo: string;
-  salario: number;
-  /** Distribuição por setor: pct soma 100. Setores backend: Financeiro, Comercial, RH. */
-  alocacoes: Alocacao[];
-  socio: boolean;
-  metaSalarial: number;
-  status: 'Ativo' | 'Inativo';
-  cargaHorariaMes?: number;
-  mesDesligamento?: string | null;
+export interface Colaborador {
+  id: string
+  nome: string
+  nomesIClips: string[]         // aliases como aparecem em executionResponsible
+  horasContratadasSemana: number
+  alocacoes: AlocacaoSetor[]    // soma deve ser 100
+  status: 'Ativo' | 'Inativo'
+  mesDesligamento: string | null  // 'YYYY-MM'
+  historicoSalarial: HistoricoSalario[]
 }
+
+// ─── CLIENTE ────────────────────────────────────────────────────────────────
+
+export interface FaturamentoMes {
+  mesAno: string  // 'YYYY-MM'
+  valor: number
+}
+
+export interface Cliente {
+  id: string
+  nome: string
+  nomesIClips: string[]       // aliases como aparecem em clientName
+  isInterno: boolean          // true = jobs internos, não entra no ranking financeiro
+  status: 'Ativo' | 'Inativo'
+  mesDesligamento: string | null
+  faturamentoMensal: FaturamentoMes[]
+}
+
+// ─── CUSTO FIXO ─────────────────────────────────────────────────────────────
 
 export interface CustoFixo {
-  id: string;
-  mesAno?: string;
-  descricao: string;
-  valor: number;
-  tipo: 'Backend' | 'Operacional';
-  observacao?: string;
+  id: string
+  descricao: string
+  mesAno: string  // 'YYYY-MM'
+  valor: number
 }
 
-export interface CustoVariavel {
-  id: string;
-  mesAno: string;
-  descricao: string;
-  valor: number;
-  categoria: string;
-}
-
-export interface ClienteManual {
-  id: string;
-  nome: string;
-  cluster: string;
-  receita: number;
-  status: 'Ativo' | 'Inativo' | 'Pausado';
-}
+// ─── PARÂMETROS GLOBAIS ─────────────────────────────────────────────────────
 
 export interface ConfigParams {
-  horasMes: number;
-  aproveitamentoPct: number;
-  gatilhoContratacaoPct: number;
-  margemDesejadaPct: number;
-  fatorComplexidadePct: number;
-  trafegoPctPacote: number;
-  socialMediaPctPacote: number;
-  smAtendimentoPct: number;
-  smCriacaoPct: number;
-  smRevisaoPct: number;
+  aproveitamentoPct: number   // ex: 0.85
+  margemDesejadaPct: number   // ex: 0.25
+  spreadsheetId: string
+  sheetsApiKey: string
+  senha: string
 }
 
-export interface ClienteAnalise {
-  nome: string;
-  cluster: string;
-  receita: number;
-  horasMes: number;
-  custoRateado: number;
-  lucroReal: number;
-  margemReal: number;
-  breakEven: number;           // receita mínima para lucro zero = custoRateado
-  concentracao: number;        // receita(cliente) / receitaTotal
-  receitaPorHora: number;
-  custoPorHora: number;
-  status: 'Saudável' | 'Atenção' | 'Deficitário' | 'Prejuízo';
+// ─── DADOS BRUTOS DO iCLIPS (Google Sheets) ─────────────────────────────────
+
+export interface TarefaIClips {
+  clientName: string
+  executionResponsible: string
+  slaTime: string            // HH:MM:SS
+  playEndDate: string        // YYYY-MM-DD HH:MM:SS
+  nomeDepartamento: string
+  // campos derivados
+  horas: number              // slaTime convertido para decimal
+  mesAno: string             // 'YYYY-MM' derivado de playEndDate
 }
 
-export interface ColaboradorAnalise {
-  nome: string;
-  area: string;
-  horasTrabalhadas: number;
-  cargaEsperada: number;
-  percentualOcupacao: number;
-  percentualEntregas: number;
-  totalJobs: number;
-  eficiencia: number;
-  produtividadePorHora: number;  // totalJobs / horasTrabalhadas
-  status: 'Alta performance' | 'Disponível' | 'Regular' | 'Sobrecarregado' | 'Atenção' | 'Crítico';
+// ─── ESTADO DA SINCRONIZAÇÃO ─────────────────────────────────────────────────
+
+export interface SheetsState {
+  tarefas: TarefaIClips[]
+  lastSync: string | null    // ISO timestamp
+  loading: boolean
+  error: string | null
 }
 
-export interface SetorCapacidade {
-  setor: string;
-  capacidadeTotal: number;
-  consumoAtual: number;
-  ocupacaoPct: number;
-  limitGatilho: number;
-  folga: number;
-  statusCapacidade: 'Livre' | 'Atenção' | 'No gatilho' | 'Acima do limite';
+// ─── PENDÊNCIAS DE VÍNCULO ───────────────────────────────────────────────────
+
+export interface Pendencias {
+  colaboradoresSemVinculo: string[]   // nomes do iClips sem colaborador mapeado
+  clientesSemVinculo: string[]        // nomes do iClips sem cliente mapeado
+  tarefasIgnoradas: number            // count total de tarefas excluídas
+  horasIgnoradas: number              // total de horas excluídas
 }
 
-export interface PacoteBase {
-  nome: string;
-  horas: number;
-  precoAntigo: number;
+// ─── RESULTADOS DE CÁLCULO ───────────────────────────────────────────────────
+
+export interface ResultadoCliente {
+  clienteId: string
+  nome: string
+  faturamento: number
+  horasDiretas: number
+  custoDireto: number
+  custoBackendRateado: number
+  custoOverheadRateado: number
+  custoFixoRateado: number
+  custoTotal: number
+  margem: number | null        // null se faturamento = 0
+  temPendencias: boolean
 }
 
-export interface PacoteCalculado extends PacoteBase {
-  custoReal: number;
-  precoMinimo: number;
-  precoRecomendado: number;
-  lucroMes: number;
-  margemAntiga: number;
-  margemNova: number;
-  destaque: boolean;
+export interface ResultadoDRE {
+  receitaBruta: number
+  custoDiretoTotal: number
+  custoBackendTotal: number
+  folhaTotalInformativo: number
+  custoOverheadInterno: number
+  custoFixoTotal: number
+  resultadoLiquido: number
+  margemLiquida: number | null
 }
 
-export interface SheetsConfig {
-  spreadsheetId: string;
-  iClipsSpreadsheetId: string;
-  apiKey: string;
-  autoRefresh: boolean;
+export interface ResultadoCapacidade {
+  setorId: string
+  setorNome: string
+  capacidadeHoras: number
+  consumoHoras: number
+  ocupacaoPct: number
+  status: 'Livre' | 'Atencao' | 'Estourado'
 }
 
-export interface TarefaRelatorio {
-  colaborador: string;      // nome limpo ex: "Evelyn Korber"
-  area: string;             // "Tráfego", "Mídia", etc.
-  clienteRaw: string;       // nome original no relatório ex: "Servopa Seminovos"
-  clienteCanônico: string;  // após mapeamento ex: "Servopa"
-  isOverhead: boolean;
-  mesAno: string;           // "2026-01"
-  duracaoHoras: number;
-  custo: number;
-  descricao: string;
+export interface ResultadoColaborador {
+  colaboradorId: string
+  nome: string
+  setores: string[]
+  horasContratadas: number    // por mês
+  horasTrabalhadas: number    // do iClips no período
+  ocupacaoPct: number
+  custoHora: number
+  status: 'Ativo' | 'Inativo'
 }
 
-export interface ResumoColaboradorCliente {
-  mesAno: string;
-  colaborador: string;
-  clienteRaw: string;
-  clienteCanônico: string;
-  isOverhead: boolean;
-  horasTotais: number;
-  custoTotal: number;
-  nTarefas: number;
+// ─── PERÍODO FILTRADO ────────────────────────────────────────────────────────
+
+export interface Periodo {
+  inicio: string   // 'YYYY-MM'
+  fim: string      // 'YYYY-MM'
 }
 
-export interface CustoClienteRelatorio {
-  cliente: string;
-  mesAno: string;
-  horasDiretas: number;
-  custoDireto: number;
-  horasOverhead: number;
-  custoOverhead: number;
-  horasTotal: number;
-  custoTotal: number;
-  colaboradores: {
-    nome: string;
-    horas: number;
-    custo: number;
-    custoHora: number;
-  }[];
-}
-
-export interface RelatorioImportado {
-  id: string;
-  nomeArquivo: string;
-  periodoInicio: string;
-  periodoFim: string;
-  dataImport: string;
-  mesesCobertos: string[];
-  totalTarefas: number;
-  totalColaboradores: number;
-  clientesNaoMapeados: string[];
-  resumos: ResumoColaboradorCliente[];
-  tarefas?: TarefaRelatorio[];
+// lista de meses 'YYYY-MM' no intervalo
+export function mesesNoPeriodo(periodo: Periodo): string[] {
+  const meses: string[] = []
+  let [ano, mes] = periodo.inicio.split('-').map(Number)
+  const [anoFim, mesFim] = periodo.fim.split('-').map(Number)
+  while (ano < anoFim || (ano === anoFim && mes <= mesFim)) {
+    meses.push(`${ano}-${String(mes).padStart(2, '0')}`)
+    mes++
+    if (mes > 12) { mes = 1; ano++ }
+  }
+  return meses
 }
